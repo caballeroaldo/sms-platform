@@ -4,14 +4,14 @@
   "description": "SMS Automation Platform - Backend API",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:push": "prisma db push",
-    "test": "jest"
+    "db:seed": "npx tsx prisma/seed.ts"
   },
   "keywords": [],
   "author": "",
@@ -36,6 +36,7 @@
     "@types/node": "^25.8.0",
     "prisma": "^5.22.0",
     "ts-node-dev": "^2.0.0",
+    "tsx": "^4.19.4",
     "typescript": "^6.0.3"
   }
 }

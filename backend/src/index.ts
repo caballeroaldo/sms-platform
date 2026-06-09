@@ -5,10 +5,13 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import config from './config/index.js';
+import config, { isMockMode } from './config/index.js';
 import routes from './routes/index.js';
 import { requestLogger, corsOptions } from './middleware/index.js';
 import { ApiResponse } from './types/index.js';
+
+// Track if database is configured
+const hasDatabase = !!config.databaseUrl;
 
 // Initialize Express app
 const app = express();
@@ -32,6 +35,32 @@ app.use(requestLogger);
 // ===========================================
 
 app.use('/api', routes);
+
+// ===========================================
+// HEALTH CHECK ENHANCEMENT
+// ===========================================
+
+app.use('/api/health', (req, res, next) => {
+  if (req.path === '/detailed') {
+    // Detailed health check
+    res.json({
+      success: true,
+      data: {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        version: process.env.npm_package_version || '1.0.0',
+        services: {
+          database: hasDatabase ? 'configured' : 'mock',
+          twilio: config.twilioAccountSid ? 'configured' : 'mock',
+          redis: config.redisUrl ? 'configured' : 'mock',
+        },
+        mode: isMockMode ? 'development (mock services)' : 'production-ready',
+      },
+    });
+  } else {
+    next();
+  }
+});
 
 // ===========================================
 // ERROR HANDLING
@@ -61,19 +90,27 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 // START SERVER
 // ===========================================
 
-app.listen(config.port, () => {
-  console.log(`
-╔═══════════════════════════════════════════════════════╗
-║                                                       ║
+const modeIndicator = isMockMode ? '⚠️  MOCK MODE' : '✅ Production Ready';
+const dbIndicator = hasDatabase ? '🗄️   Database: connected' : '🗄️   Database: mock (run prisma migrate + seed first)';
+
+console.log(`
+╔════════════════════════════════════════════════════════╗
+║                                                        ║
 ║   SMS Platform Backend                                 ║
 ║   ─────────────────                                    ║
-║                                                       ║
-║   Server:  http://localhost:${config.port}              ║
-║   Health:  http://localhost:${config.port}/api/health   ║
-║   Env:     ${config.nodeEnv.padEnd(42)}║
-║                                                       ║
-╚═══════════════════════════════════════════════════════╝
-  `);
+║                                                        ║
+║   Server:  http://localhost:${config.port.toString().padStart(26)}║
+║   Health:  http://localhost:${config.port}/api/health     ║
+║   Detailed: http://localhost:${config.port}/api/health/detailed║
+║                                                        ║
+║   Mode:      ${modeIndicator.padEnd(42)}║
+║   ${dbIndicator.padEnd(56)}║
+║                                                        ║
+╚════════════════════════════════════════════════════════╝
+`);
+
+app.listen(config.port, () => {
+  // Server started successfully
 });
 
 export default app;

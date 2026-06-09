@@ -61,21 +61,24 @@ This project is being developed for a tax preparation and bookkeeping business s
 ## Tech Stack
 
 ### Frontend
-- [Next.js](https://nextjs.org/) - React Framework
-- [React](https://react.dev/) - UI Library
+- [Next.js](https://nextjs.org/) 16 - React Framework with App Router
+- [React](https://react.dev/) 19 - UI Library
 - [TypeScript](https://www.typescriptlang.org/) - Type Safety
-- [Tailwind CSS](https://tailwindcss.com/) - Styling
-- [TanStack Query](https://tanstack.com/query) - Data Fetching
+- [Tailwind CSS](https://tailwindcss.com/) v4 - Styling
+- [TanStack Query](https://tanstack.com/query) v5 - Data Fetching & Caching
 - [React Hook Form](https://react-hook-form.com/) - Form Management
+- [Jest](https://jestjs.io/) + Testing Library - Unit Testing
 
 ### Backend
-- [Node.js](https://nodejs.org/) - Runtime
-- [Express.js](https://expressjs.com/) - Web Framework
+- [Node.js](https://nodejs.org/) - Runtime (ESM modules)
+- [Express.js](https://expressjs.com/) 5 - Web Framework
 - [TypeScript](https://www.typescriptlang.org/) - Type Safety
+- [bcrypt](https://www.npmjs.com/package/bcrypt) - Password hashing
+- [BullMQ](https://docs.bullmq.io/) - Job Queue
+- [Prisma](https://www.prisma.io/) - Database ORM
 
 ### Database
 - [PostgreSQL](https://www.postgresql.org/) - Primary Database
-- [Prisma ORM](https://www.prisma.io/) - Database ORM
 - [Supabase](https://supabase.com/) or [Neon](https://neon.tech/) - Database Hosting
 
 ### Queue & Scheduling
@@ -90,6 +93,48 @@ This project is being developed for a tax preparation and bookkeeping business s
 - **Backend**: [Render](https://render.com/) or [Railway](https://railway.app/)
 - **Redis**: [Upstash](https://upstash.com/)
 - **Database**: Supabase or Neon
+
+---
+
+## Quick Start (Development)
+
+The platform supports **mock mode** for both frontend and backend — no external services required to get started.
+
+### Option 1: Frontend Only (Mock Data)
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:3000 — uses built-in mock data (6 clients, 6 templates, 4 campaigns).
+
+### Option 2: Full Stack with Mock Backend
+
+```bash
+cd backend
+npm install
+npm run dev
+```
+
+Backend runs at http://localhost:4000 — falls back to in-memory mock database when `DATABASE_URL` is empty.
+
+### Option 3: Full Stack with Real Services
+
+```bash
+# Backend
+cd backend
+cp .env.example .env
+# Edit .env with your PostgreSQL, Redis, and Twilio credentials
+npm install
+npm run dev
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
+```
 
 ---
 
@@ -207,95 +252,25 @@ This project is being developed for a tax preparation and bookkeeping business s
 
 ### Prerequisites
 
-- Node.js 18+
-- PostgreSQL database
-- Redis server
-- Twilio account
+- Node.js 18+ (tested with 26)
+- PostgreSQL database (optional for mock mode)
+- Redis server (optional for mock mode)
+- Twilio account (optional for mock mode)
 
-### 1. Clone and Install
+### Environment Modes
 
-```bash
-# Clone the repository
-git clone <repository-url>
-cd sms-platform
+The platform has three operating modes:
 
-# Install frontend dependencies
-cd frontend
-npm install
+1. **Frontend-only**: No backend needed. Uses mock data from `frontend/lib/mockData.ts`
+2. **Backend mock mode**: Backend uses in-memory database when `DATABASE_URL` is empty
+3. **Full stack**: All services connected (PostgreSQL, Redis, Twilio)
 
-# Install backend dependencies
-cd ../backend
-npm install
-```
-
-### 2. Environment Configuration
-
-**Backend:**
-```bash
-cd backend
-cp .env.example .env
-# Edit .env with your credentials
-```
-
-**Required environment variables:**
-
-```env
-# Database
-DATABASE_URL="postgresql://..."
-
-# Redis
-REDIS_URL="redis://..."
-
-# Authentication
-JWT_SECRET="your-secret-key"
-
-# Twilio
-TWILIO_ACCOUNT_SID="AC..."
-TWILIO_AUTH_TOKEN="..."
-TWILIO_PHONE_NUMBER="+1..."
-```
-
-**Frontend:**
-```bash
-cd frontend
-cp .env.example .env.local
-```
-
-### 3. Database Setup
-
-```bash
-cd backend
-
-# Generate Prisma client
-npm run prisma:generate
-
-# Run migrations (creates tables)
-npm run prisma:migrate
-
-# Or push schema directly
-npm run prisma:push
-```
-
-### 4. Start Development Servers
-
-**Terminal 1 - Backend:**
-```bash
-cd backend
-npm run dev
-```
-
-**Terminal 2 - Frontend:**
-```bash
-cd frontend
-npm run dev
-```
-
-### 5. Access the Application
-
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:4000
-- Health Check: http://localhost:4000/api/health
-- Prisma Studio: `npm run prisma:studio`
+View the frontend at **http://localhost:3000** to see the SMS client dashboard with:
+- Stats overview (clients, messages, campaigns)
+- Client list with search/filter
+- Template management by category
+- Campaign tracking by status
+- Message history with send capabilities
 
 ---
 
@@ -304,28 +279,32 @@ npm run dev
 ```
 sms-platform/
 ├── frontend/
-│   ├── app/                    # Next.js App Router
-│   │   ├── (auth)/            # Auth pages
-│   │   ├── (dashboard)/       # Dashboard pages
-│   │   ├── api/               # API routes
-│   │   └── page.tsx           # Landing page
-│   ├── components/            # React components
-│   ├── lib/                   # Utilities and API client
-│   ├── hooks/                 # Custom React hooks
-│   └── .env.example           # Environment template
+│   ├── app/                    # Next.js App Router pages
+│   │   ├── page.tsx           # Dashboard
+│   │   ├── clients/           # Client management
+│   │   ├── campaigns/          # Campaign management
+│   │   ├── templates/         # Template management
+│   │   └── messages/          # Message history
+│   ├── lib/
+│   │   ├── api.ts             # Dual-mode API client
+│   │   ├── mockData.ts        # Mock data & filters
+│   │   ├── types/             # TypeScript interfaces
+│   │   ├── hooks/             # React Query hooks
+│   │   └── components/         # UI components
+│   └── tests/                 # Jest unit tests (45 passing)
 │
 ├── backend/
 │   ├── src/
-│   │   ├── config/           # Configuration
-│   │   ├── middleware/        # Express middleware
-│   │   ├── prisma/           # Prisma client & schema
-│   │   ├── routes/           # API routes
-│   │   ├── services/         # Business logic
+│   │   ├── config/            # Environment configuration
+│   │   ├── db/               # Mock database (fallback)
+│   │   ├── middleware/       # Express middleware
+│   │   ├── prisma/           # Prisma schema & client
+│   │   ├── routes/          # API routes
+│   │   ├── services/         # Twilio service
 │   │   ├── types/            # TypeScript types
-│   │   ├── utils/            # Utility functions
-│   │   ├── workers/          # Background workers
-│   │   └── index.ts          # Entry point
-│   └── .env.example          # Environment template
+│   │   ├── utils/            # Utilities
+│   │   └── workers/          # Background workers
+│   └── .env                  # Environment config
 │
 ├── docs/
 │   └── BUILD_BRIEF.md        # Implementation spec
@@ -387,6 +366,24 @@ sms-platform/
 | scheduledAt | DateTime? | Scheduled send time |
 | sentAt | DateTime? | Actual send time |
 | retryCount | Int | Retry attempts |
+
+---
+
+## Testing
+
+### Frontend Tests
+```bash
+cd frontend
+npm test              # Run all tests
+npm run test:watch    # Watch mode
+npm run test:coverage # Coverage report
+```
+
+Current test coverage:
+- 45 passing tests
+- Mock data validation
+- API client operations
+- UI component rendering
 
 ---
 
