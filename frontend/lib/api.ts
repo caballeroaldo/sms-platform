@@ -15,6 +15,7 @@ import type {
   Message,
   DashboardStats,
   LoginInput,
+  RegisterInput,
   AuthResponse,
   SendMessageInput,
   SendMessageResult,
@@ -126,6 +127,32 @@ const mockApi = {
       };
     }
     return { success: false, error: 'Invalid credentials' };
+  },
+
+  async register(input: RegisterInput): Promise<ApiResponse<AuthResponse>> {
+    await simulateDelay();
+    if (!input.email || !input.password) {
+      return { success: false, error: 'Email and password are required' };
+    }
+    if (input.password.length < 8) {
+      return { success: false, error: 'Password must be at least 8 characters' };
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(input.email)) {
+      return { success: false, error: 'Invalid email format' };
+    }
+    // Mock registration - in real app would check for existing user
+    return {
+      success: true,
+      data: {
+        token: `mock-jwt-token-${Date.now()}`,
+        user: {
+          id: `user-${Date.now()}`,
+          email: input.email,
+          role: 'USER' as const,
+        },
+      },
+    };
   },
 
   // Clients
@@ -305,10 +332,40 @@ const mockApi = {
 
   async sendMessage(input: SendMessageInput): Promise<ApiResponse<SendMessageResult>> {
     await simulateDelay(800);
-    const sent = input.clientIds.length;
+
+    // Add new messages to mock state for this client
+    const newMessages = input.clientIds.map((clientId) => {
+      const newMsg: Message = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        clientId,
+        campaignId: input.campaignId || null,
+        content: input.content,
+        status: 'DELIVERED',
+        twilioSid: `SM_MOCK_${Date.now()}`,
+        errorMessage: null,
+        scheduledAt: null,
+        sentAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        // Get client info from existing mock state
+        client: mockState.clients.find(c => c.id === clientId)
+          ? {
+              id: mockState.clients.find(c => c.id === clientId)!.id,
+              firstName: mockState.clients.find(c => c.id === clientId)!.firstName,
+              lastName: mockState.clients.find(c => c.id === clientId)!.lastName,
+              phone: mockState.clients.find(c => c.id === clientId)!.phone,
+            }
+          : undefined,
+        type: 'outbound',
+      };
+      return newMsg;
+    });
+
+    // Add to mock state
+    mockState.messages.push(...newMessages);
+
     return {
       success: true,
-      data: { sent, failed: 0 },
+      data: { sent: newMessages.length, failed: 0 },
     };
   },
 
@@ -326,6 +383,13 @@ const mockApi = {
 export const api = USE_MOCK ? mockApi : {
   async login(input: LoginInput) {
     return apiFetch<AuthResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async register(input: RegisterInput) {
+    return apiFetch<AuthResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(input),
     });

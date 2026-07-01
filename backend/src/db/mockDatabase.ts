@@ -61,7 +61,7 @@ interface Campaign {
   updatedAt: Date;
 }
 
-interface Message {
+export interface Message {
   id: string;
   clientId: string;
   campaignId: string | null;

@@ -153,6 +153,8 @@ export interface Message {
     id: string;
     name: string;
   };
+  /** Message direction: outbound (from platform) or inbound (from client) */
+  type?: 'outbound' | 'inbound';
 }
 
 // ===========================================

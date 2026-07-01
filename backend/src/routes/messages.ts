@@ -7,7 +7,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import prisma from '../prisma/client.js';
+import { clients as dbClients, messages as dbMessages } from '../db/database.js';
 import { authenticate } from '../middleware/index.js';
 import { SendBulkMessageInput, ApiResponse } from '../types/index.js';
 import { sendSMS } from '../services/twilio.js';
@@ -34,57 +34,61 @@ router.post('/send-now', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const clients = await prisma.client.findMany({
-      where: { id: { in: input.clientIds }, optedOut: false },
-      select: { id: true, phone: true, firstName: true, lastName: true },
-    });
-
-    if (clients.length === 0) {
-      res.status(400).json({ success: false, error: 'No opted-in clients found' } as ApiResponse);
-      return;
-    }
-
     const results = { sent: 0, failed: 0, errors: [] as string[] };
 
-    for (const client of clients) {
+    // Process each client
+    for (const clientId of input.clientIds) {
       try {
-        const message = await prisma.message.create({
-          data: { clientId: client.id, campaignId: input.campaignId, content: input.content, status: 'PENDING' },
-        });
+        const client = await dbClients.findUnique(clientId);
+        if (!client) {
+          results.failed++;
+          results.errors.push(`Client ${clientId}: not found`);
+          continue;
+        }
 
+        if (client.optedOut) {
+          results.failed++;
+          results.errors.push(`${client.firstName}: opted out`);
+          continue;
+        }
+
+        // Send via Twilio (or mock if no credentials)
         const result = await sendSMS(client.phone, input.content);
 
+        // Create message record
+        const message = await dbMessages.create({
+          clientId,
+          content: input.content,
+          status: result.success ? 'DELIVERED' : 'FAILED',
+          campaignId: input.campaignId,
+        });
+
+        // Update with Twilio SID if successful
         if (result.success) {
-          await prisma.message.update({
-            where: { id: message.id },
-            data: { status: 'SENT', twilioSid: result.sid, sentAt: new Date() },
+          await dbMessages.update(message.id, {
+            status: 'DELIVERED',
+            twilioSid: result.sid || `mock-${Date.now()}`,
+            sentAt: new Date(),
           });
           results.sent++;
         } else {
-          await prisma.message.update({
-            where: { id: message.id },
-            data: { status: 'FAILED', errorMessage: result.error },
+          await dbMessages.update(message.id, {
+            status: 'FAILED',
+            errorMessage: result.error || 'Unknown error',
           });
           results.failed++;
           results.errors.push(`${client.firstName}: ${result.error}`);
         }
       } catch (error) {
         results.failed++;
-        results.errors.push(`${client.firstName}: ${(error as Error).message}`);
+        results.errors.push(`${clientId}: ${(error as Error).message}`);
       }
     }
 
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user!.id,
-        actor: req.user!.email,
-        action: 'bulk_sms_sent',
-        details: { clientCount: clients.length, sent: results.sent, failed: results.failed },
-        ipAddress: req.ip,
-      },
-    });
-
-    res.json({ success: true, data: { ...results, errors: results.errors.length > 0 ? results.errors : undefined } } as ApiResponse);
+    res.json({
+      success: true,
+      data: { ...results, errors: results.errors.length > 0 ? results.errors : undefined }
+    } as ApiResponse);
   } catch (error) {
     console.error('Send message error:', error);
     res.status(500).json({ success: false, error: 'Failed to send message' } as ApiResponse);
@@ -109,7 +113,7 @@ router.post('/schedule', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const client = await prisma.client.findUnique({ where: { id: clientId }, select: { id: true, optedOut: true } });
+    const client = await dbClients.findUnique(clientId);
     if (!client) {
       res.status(404).json({ success: false, error: 'Client not found' } as ApiResponse);
       return;
@@ -120,19 +124,11 @@ router.post('/schedule', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const message = await prisma.message.create({
-      data: { clientId: client.id, campaignId, content, status: 'PENDING', scheduledAt: new Date(scheduledAt) },
-    });
-
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user!.id,
-        clientId: client.id,
-        actor: req.user!.email,
-        action: 'message_scheduled',
-        details: { messageId: message.id, scheduledAt },
-        ipAddress: req.ip,
-      },
+    const message = await dbMessages.create({
+      clientId,
+      content,
+      status: 'PENDING',
+      campaignId,
     });
 
     res.status(201).json({ success: true, data: message } as ApiResponse);
@@ -153,34 +149,53 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const limit = Math.min(100, Math.max(1, parseInt(String(query.limit || '50'), 10)));
     const skip = (page - 1) * limit;
 
-    const where: Record<string, unknown> = {};
-    const status = query.status;
-    if (status && !Array.isArray(status)) where.status = status;
+    const clientId = query.clientId as string | undefined;
+    const status = query.status as string | undefined;
 
-    for (const key of ['status', 'clientId', 'campaignId'] as const) {
-      const val = query[key];
-      if (val && !Array.isArray(val)) {
-        where[key] = val;
-      }
+    // Get messages for a specific client if provided
+    if (clientId) {
+      const messages = await dbMessages.findByClient(clientId);
+      res.json({
+        success: true,
+        data: {
+          messages: messages.slice(skip, skip + limit),
+          pagination: {
+            page,
+            limit,
+            total: messages.length,
+            pages: Math.ceil(messages.length / limit),
+          },
+        },
+      } as ApiResponse);
+      return;
     }
 
-    const [messages, total] = await Promise.all([
-      prisma.message.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          client: { select: { id: true, firstName: true, lastName: true, phone: true } },
-          campaign: { select: { id: true, name: true } },
-        },
-      }),
-      prisma.message.count({ where }),
-    ]);
+    // For mock mode, return all messages
+    const { mockDb } = await import('../db/mockDatabase.js');
+    const allMessages = Array.from(mockDb.messages.values()).map(m => ({
+      id: m.id,
+      clientId: m.clientId,
+      content: m.content,
+      status: m.status,
+      sentAt: m.sentAt?.toISOString() || null,
+      createdAt: m.createdAt.toISOString(),
+      client: () => {
+        const client = mockDb.clients.get(m.clientId);
+        return client ? { id: client.id, firstName: client.firstName, lastName: client.lastName, phone: client.phone } : undefined;
+      },
+    }));
 
     res.json({
       success: true,
-      data: { messages, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      data: {
+        messages: allMessages.slice(skip, skip + limit),
+        pagination: {
+          page,
+          limit,
+          total: allMessages.length,
+          pages: Math.ceil(allMessages.length / limit),
+        },
+      },
     } as ApiResponse);
   } catch (error) {
     console.error('List messages error:', error);
@@ -195,21 +210,26 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params['id'] as string;
-
-    const message = await prisma.message.findUnique({
-      where: { id },
-      include: {
-        client: { select: { id: true, firstName: true, lastName: true, phone: true } },
-        campaign: { select: { id: true, name: true } },
-      },
-    });
+    const { mockDb } = await import('../db/mockDatabase.js');
+    const message = mockDb.messages.get(id);
 
     if (!message) {
       res.status(404).json({ success: false, error: 'Message not found' } as ApiResponse);
       return;
     }
 
-    res.json({ success: true, data: message } as ApiResponse);
+    const client = mockDb.clients.get(message.clientId);
+    res.json({
+      success: true,
+      data: {
+        id: message.id,
+        clientId: message.clientId,
+        content: message.content,
+        status: message.status,
+        createdAt: message.createdAt.toISOString(),
+        client: client ? { id: client.id, firstName: client.firstName, lastName: client.lastName, phone: client.phone } : undefined,
+      },
+    } as ApiResponse);
   } catch (error) {
     console.error('Get message error:', error);
     res.status(500).json({ success: false, error: 'Failed to get message' } as ApiResponse);

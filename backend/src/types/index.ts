@@ -61,7 +61,7 @@ export interface CreateClientInput {
   lastName: string;
   phone: string;
   email?: string;
-  birthday?: Date;
+  birthday?: string;  // ISO date string from JSON body
   notes?: string;
   optedOut?: boolean;
 }
