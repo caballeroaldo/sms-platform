@@ -158,16 +158,14 @@ router.post('/inbound', async (req: Request, res: Response): Promise<void> => {
       }
     }
 
-    // Store the inbound message
-    if (twilioSid) {
+    // Store the inbound message (only if we have a client)
+    if (twilioSid && client?.id) {
       await prisma.inboundMessage.create({
         data: {
-          clientId: client?.id,
+          clientId: client.id,
           twilioSid,
-          fromNumber,
           body: body || '',
           receivedAt: new Date(),
-          processedAt: new Date(),
         },
       });
     }
@@ -175,7 +173,7 @@ router.post('/inbound', async (req: Request, res: Response): Promise<void> => {
     // Acknowledge and mark event processed
     await prisma.webhookEvent.update({
       where: { id: webhookEvent.id },
-      data: { processed: true, processedAt: new Date() },
+      data: { processed: true },
     });
 
     res.sendStatus(200);
@@ -230,7 +228,7 @@ router.post('/status', async (req: Request, res: Response): Promise<void> => {
 
       if (message) {
         // Map Twilio status to our status
-        let newStatus: 'SENT' | 'DELIVERED' | 'UNDELIVERED' | 'FAILED' | null = null;
+        let newStatus: 'SENT' | 'DELIVERED' | 'FAILED' | null = null;
         let deliveredAt: Date | null = null;
 
         switch (status) {
@@ -244,8 +242,6 @@ router.post('/status', async (req: Request, res: Response): Promise<void> => {
             deliveredAt = new Date();
             break;
           case 'undelivered':
-            newStatus = 'UNDELIVERED';
-            break;
           case 'failed':
             newStatus = 'FAILED';
             break;
@@ -267,7 +263,7 @@ router.post('/status', async (req: Request, res: Response): Promise<void> => {
     // Mark event as processed
     await prisma.webhookEvent.update({
       where: { id: webhookEvent.id },
-      data: { processed: true, processedAt: new Date() },
+      data: { processed: true },
     });
 
     res.sendStatus(200);

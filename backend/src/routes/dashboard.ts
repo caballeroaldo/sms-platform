@@ -42,14 +42,14 @@ router.get('/stats', async (req: Request, res: Response): Promise<void> => {
       prisma.message.count({
         where: {
           createdAt: { gte: thirtyDaysAgo },
-          status: { in: ['SENT', 'DELIVERED', 'UNDELIVERED', 'FAILED'] },
+          status: { in: ['SENT', 'DELIVERED'] },
         },
       }),
       prisma.message.count({
         where: { createdAt: { gte: thirtyDaysAgo }, status: 'DELIVERED' },
       }),
       prisma.message.count({
-        where: { createdAt: { gte: thirtyDaysAgo }, status: { in: ['FAILED', 'UNDELIVERED'] } },
+        where: { createdAt: { gte: thirtyDaysAgo }, status: 'FAILED' },
       }),
 
       // Pending messages
@@ -124,7 +124,7 @@ router.get('/activity', async (req: Request, res: Response): Promise<void> => {
     // Get recent audit logs
     const recentAudit = await prisma.auditLog.findMany({
       take: limit,
-      orderBy: { timestamp: 'desc' },
+      orderBy: { createdAt: 'desc' },
       where: {
         action: {
           in: ['client_created', 'client_deleted', 'campaign_sent', 'bulk_sms_sent', 'client_opted_out'],
@@ -149,7 +149,7 @@ router.get('/activity', async (req: Request, res: Response): Promise<void> => {
       action: a.action,
       actor: a.actor,
       details: a.details,
-      timestamp: a.timestamp,
+      timestamp: a.createdAt,
     }));
 
     const combined = [...messages, ...audits].sort(
