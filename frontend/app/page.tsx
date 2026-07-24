@@ -5,15 +5,32 @@
  * Main overview of SMS platform metrics
  */
 
-import { useDashboardStats } from '@/lib/hooks/useApi';
+import { useState } from 'react';
+import { useDashboardStats, useMessages, useCampaigns } from '@/lib/hooks/useApi';
 import { StatCard, LoadingScreen, StatusBadge } from '@/lib/components/ui';
-import { mockMessages, mockCampaigns, mockClients } from '@/lib/mockData';
+import { useRequireAuth } from '@/lib/components/ProtectedRoute';
 import Link from 'next/link';
 
 export default function DashboardPage() {
-  const { data: stats, isLoading, error } = useDashboardStats();
+  // Protect this route - redirect to login if not authenticated
+  useRequireAuth();
 
-  if (isLoading) {
+  const { data: stats, isLoading: statsLoading, error: statsError } = useDashboardStats();
+  const { data: messagesData, isLoading: messagesLoading } = useMessages({ limit: 5 });
+  const { data: campaignsData, isLoading: campaignsLoading } = useCampaigns({ status: 'RUNNING' });
+
+  // Log errors for debugging
+  if (statsError) {
+    console.error('Dashboard stats error:', statsError);
+  }
+
+  // Calculate delivery rate
+  const deliveryRate = stats?.sentMessages && stats.sentMessages > 0
+    ? Math.round((stats.deliveredMessages / stats.sentMessages) * 100)
+    : 0;
+
+  // Show loading state if any data is loading
+  if (statsLoading) {
     return (
       <div className="p-8">
         <LoadingScreen message="Loading dashboard..." />
@@ -21,19 +38,9 @@ export default function DashboardPage() {
     );
   }
 
-  if (error || !stats) {
-    return (
-      <div className="p-8">
-        <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4">
-          Failed to load dashboard data. Please try again.
-        </div>
-      </div>
-    );
-  }
-
-  // For mock mode, use recent data from mock
-  const recentMessages = mockMessages.slice(0, 5);
-  const activeCampaignsData = mockCampaigns.filter(c => c.status === 'RUNNING' || c.status === 'SCHEDULED');
+  // Use API data only - no mock fallback
+  const recentMessages = messagesData?.messages || [];
+  const activeCampaigns = campaignsData?.campaigns || [];
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -43,34 +50,48 @@ export default function DashboardPage() {
         <p className="text-slate-600 mt-1">Overview of your SMS platform metrics</p>
       </div>
 
+      {/* Error State */}
+      {statsError && (
+        <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 mb-6">
+          <p className="font-semibold">Failed to load dashboard data</p>
+          <p className="text-sm mt-1">{String(statsError)}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+          >
+            Click to reload
+          </button>
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatCard
           title="Total Clients"
-          value={stats.totalClients}
-          subtitle={`${stats.optedInClients} opted in`}
+          value={stats?.totalClients || 0}
+          subtitle={`${stats?.optedInClients || 0} opted in`}
           icon="👥"
           color="blue"
           trend={{ value: 12, isPositive: true }}
         />
         <StatCard
           title="Messages Sent"
-          value={stats.sentMessages}
-          subtitle={`${Math.round((stats.deliveredMessages / stats.sentMessages) * 100)}% delivery rate`}
+          value={stats?.sentMessages || 0}
+          subtitle={`${deliveryRate}% delivery rate`}
           icon="📨"
           color="purple"
           trend={{ value: 8, isPositive: true }}
         />
         <StatCard
           title="Active Campaigns"
-          value={stats.activeCampaigns}
-          subtitle={`${stats.totalCampaigns} total`}
+          value={stats?.activeCampaigns || 0}
+          subtitle={`${stats?.totalCampaigns || 0} total`}
           icon="🚀"
           color="orange"
         />
         <StatCard
           title="Templates"
-          value={stats.templatesCount}
+          value={stats?.templatesCount || 0}
           subtitle="Message templates"
           icon="📝"
           color="green"
@@ -119,10 +140,10 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="divide-y divide-slate-100">
-            {activeCampaignsData.length === 0 ? (
+            {activeCampaigns.length === 0 ? (
               <div className="p-6 text-center text-slate-500">No active campaigns</div>
             ) : (
-              activeCampaignsData.map((campaign) => (
+              activeCampaigns.map((campaign) => (
                 <div key={campaign.id} className="p-4 flex items-center justify-between">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900 truncate">
@@ -146,14 +167,12 @@ export default function DashboardPage() {
             <div>
               <div className="flex justify-between text-sm mb-1">
                 <span className="text-slate-600">Delivered</span>
-                <span className="font-medium">
-                  {Math.round((stats.deliveredMessages / stats.sentMessages) * 100)}%
-                </span>
+                <span className="font-medium">{deliveryRate}%</span>
               </div>
               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-emerald-500 rounded-full"
-                  style={{ width: `${(stats.deliveredMessages / stats.sentMessages) * 100}%` }}
+                  style={{ width: `${deliveryRate}%` }}
                 />
               </div>
             </div>
@@ -161,13 +180,19 @@ export default function DashboardPage() {
               <div className="flex justify-between text-sm mb-1">
                 <span className="text-slate-600">Failed</span>
                 <span className="font-medium">
-                  {Math.round((stats.failedMessages / stats.sentMessages) * 100)}%
+                  {stats?.sentMessages && stats.sentMessages > 0
+                    ? Math.round((stats.failedMessages / stats.sentMessages) * 100)
+                    : 0}%
                 </span>
               </div>
               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-red-400 rounded-full"
-                  style={{ width: `${(stats.failedMessages / stats.sentMessages) * 100}%` }}
+                  style={{
+                    width: `${stats?.sentMessages && stats.sentMessages > 0
+                      ? Math.round((stats.failedMessages / stats.sentMessages) * 100)
+                      : 0}%`
+                  }}
                 />
               </div>
             </div>

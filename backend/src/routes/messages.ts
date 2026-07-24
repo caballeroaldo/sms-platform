@@ -4,6 +4,7 @@
  * POST /messages/schedule
  * GET /messages
  * GET /messages/:id
+ * GET /messages/client/:clientId  - Get messages for a specific client
  */
 
 import { Router, Request, Response } from 'express';
@@ -152,48 +153,35 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const clientId = query.clientId as string | undefined;
     const status = query.status as string | undefined;
 
-    // Get messages for a specific client if provided
-    if (clientId) {
-      const messages = await dbMessages.findByClient(clientId);
-      res.json({
-        success: true,
-        data: {
-          messages: messages.slice(skip, skip + limit),
-          pagination: {
-            page,
-            limit,
-            total: messages.length,
-            pages: Math.ceil(messages.length / limit),
-          },
-        },
-      } as ApiResponse);
-      return;
-    }
+    // Build Prisma where clause
+    const where: any = {};
+    if (clientId) where.clientId = clientId;
+    if (status) where.status = status;
 
-    // For mock mode, return all messages
-    const { mockDb } = await import('../db/mockDatabase.js');
-    const allMessages = Array.from(mockDb.messages.values()).map(m => ({
-      id: m.id,
-      clientId: m.clientId,
-      content: m.content,
-      status: m.status,
-      sentAt: m.sentAt?.toISOString() || null,
-      createdAt: m.createdAt.toISOString(),
-      client: () => {
-        const client = mockDb.clients.get(m.clientId);
-        return client ? { id: client.id, firstName: client.firstName, lastName: client.lastName, phone: client.phone } : undefined;
-      },
-    }));
+    // Use Prisma for real database
+    const [messages, total] = await Promise.all([
+      dbMessages.findAll({ skip, take: limit, orderBy: 'desc', where }),
+      dbMessages.count(where),
+    ]);
 
     res.json({
       success: true,
       data: {
-        messages: allMessages.slice(skip, skip + limit),
+        messages: messages.map(m => ({
+          id: m.id,
+          clientId: m.clientId,
+          campaignId: m.campaignId,
+          content: m.content,
+          status: m.status,
+          sentAt: m.sentAt,
+          deliveredAt: m.deliveredAt,
+          createdAt: m.createdAt,
+        })),
         pagination: {
           page,
           limit,
-          total: allMessages.length,
-          pages: Math.ceil(allMessages.length / limit),
+          total,
+          pages: Math.ceil(total / limit),
         },
       },
     } as ApiResponse);
@@ -204,30 +192,71 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 /**
+ * GET /messages/client/:clientId
+ * Get messages for a specific client (for chat/conversation view)
+ */
+router.get('/client/:clientId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const clientId = String(req.params.clientId);
+
+    const outbound = await dbMessages.findByClient(clientId);
+
+    // Also get inbound messages for this client
+    const inbound = await dbMessages.findByClientInbound(clientId);
+
+    // Combine and sort by date (inbound uses receivedAt, outbound uses createdAt)
+    const outboundWithDate = outbound.map((m: any) => ({
+      ...m,
+      direction: 'outbound' as const,
+      createdAt: m.createdAt
+    }));
+    const inboundWithDate = inbound.map((m: any) => ({
+      ...m,
+      direction: 'inbound' as const,
+      createdAt: m.receivedAt
+    }));
+
+    const allMessages = [...outboundWithDate, ...inboundWithDate].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    res.json({
+      success: true,
+      data: allMessages,
+    } as ApiResponse);
+  } catch (error) {
+    console.error('Get client messages error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get client messages' } as ApiResponse);
+  }
+});
+
+/**
  * GET /messages/:id
  * Get a specific message
  */
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params['id'] as string;
-    const { mockDb } = await import('../db/mockDatabase.js');
-    const message = mockDb.messages.get(id);
+    const message = await dbMessages.findById(id);
 
     if (!message) {
       res.status(404).json({ success: false, error: 'Message not found' } as ApiResponse);
       return;
     }
 
-    const client = mockDb.clients.get(message.clientId);
     res.json({
       success: true,
       data: {
         id: message.id,
         clientId: message.clientId,
+        campaignId: message.campaignId,
         content: message.content,
         status: message.status,
-        createdAt: message.createdAt.toISOString(),
-        client: client ? { id: client.id, firstName: client.firstName, lastName: client.lastName, phone: client.phone } : undefined,
+        twilioSid: message.twilioSid,
+        sentAt: message.sentAt,
+        deliveredAt: message.deliveredAt,
+        errorMessage: message.errorMessage,
+        createdAt: message.createdAt,
       },
     } as ApiResponse);
   } catch (error) {

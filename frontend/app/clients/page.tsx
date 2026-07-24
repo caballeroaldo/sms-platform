@@ -9,12 +9,14 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useClients } from '@/lib/hooks/useApi';
 import { LoadingScreen, StatusBadge } from '@/lib/components/ui';
-import { mockClients } from '@/lib/mockData';
+import { useRequireAuth } from '@/lib/components/ProtectedRoute';
 
 export default function ClientsPage() {
+  // Protect this route - redirect to login if not authenticated
+  useRequireAuth();
+
   const [search, setSearch] = useState('');
   const [showOptedOut, setShowOptedOut] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
 
   // Get data from query
   const { data, isLoading, error } = useClients({
@@ -22,20 +24,13 @@ export default function ClientsPage() {
     optedOut: showOptedOut ? undefined : false,
   });
 
-  // For mock data display
-  const clients = data?.clients || mockClients.filter(c => {
-    if (!showOptedOut && c.optedOut) return false;
-    if (search) {
-      const s = search.toLowerCase();
-      return (
-        c.firstName.toLowerCase().includes(s) ||
-        c.lastName.toLowerCase().includes(s) ||
-        c.phone.includes(s) ||
-        (c.email?.toLowerCase().includes(s) ?? false)
-      );
-    }
-    return true;
-  });
+  // Only use API data - no mock fallback
+  const clients = data?.clients || [];
+
+  // Log error for debugging
+  if (error) {
+    console.error('Clients fetch error:', error);
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -47,10 +42,7 @@ export default function ClientsPage() {
             Manage your SMS recipients and contacts
           </p>
         </div>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
+        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
           <span>+</span> Add Client
         </button>
       </div>
@@ -83,9 +75,16 @@ export default function ClientsPage() {
       {isLoading && <LoadingScreen message="Loading clients..." />}
 
       {/* Error State */}
-      {error && (
+      {error && !isLoading && (
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4">
-          Failed to load clients. Please try again.
+          <p className="font-semibold">Failed to load clients</p>
+          <p className="text-sm mt-1">{String(error)}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+          >
+            Click to reload
+          </button>
         </div>
       )}
 
@@ -153,12 +152,7 @@ export default function ClientsPage() {
                       />
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">
-                      <Link
-                        href={`/clients/${client.id}/conversation`}
-                        className="text-blue-600 hover:text-blue-800 hover:underline"
-                      >
-                        {client._count?.outboundMessages || 0} messages
-                      </Link>
+                      {client._count?.outboundMessages || 0} messages
                     </td>
                     <td className="px-6 py-4">
                       <Link

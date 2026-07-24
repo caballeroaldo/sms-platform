@@ -55,10 +55,11 @@ export const setAuthToken = (token: string | null) => {
 };
 
 export const getAuthToken = (): string | null => {
-  if (typeof window !== 'undefined' && !authToken) {
-    authToken = localStorage.getItem('auth_token');
+  if (typeof window !== 'undefined') {
+    // Always read fresh from localStorage to avoid stale state
+    return localStorage.getItem('auth_token');
   }
-  return authToken;
+  return null;
 };
 
 // ===========================================

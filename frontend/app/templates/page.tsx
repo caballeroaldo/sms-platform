@@ -8,21 +8,20 @@
 import { useState } from 'react';
 import { useTemplates } from '@/lib/hooks/useApi';
 import { LoadingScreen, StatusBadge } from '@/lib/components/ui';
-import { mockTemplates } from '@/lib/mockData';
-import type { TemplateCategory } from '@/lib/types';
+import { useRequireAuth } from '@/lib/components/ProtectedRoute';
 
 export default function TemplatesPage() {
+  // Protect this route - redirect to login if not authenticated
+  useRequireAuth();
+
   const [categoryFilter, setCategoryFilter] = useState<string>('');
 
   const { data, isLoading, error } = useTemplates({
     category: categoryFilter || undefined,
   });
 
-  // Use mock data for display
-  const templates = data || mockTemplates.filter(t => {
-    if (!categoryFilter) return true;
-    return t.category === categoryFilter;
-  });
+  // Only use API data - no mock fallback
+  const templates = data || [];
 
   const categoryOptions: { value: string; label: string }[] = [
     { value: '', label: 'All Categories' },
@@ -32,6 +31,11 @@ export default function TemplatesPage() {
     { value: 'TRANSACTIONAL', label: 'Transactional' },
     { value: 'ALERT', label: 'Alert' },
   ];
+
+  // Log error for debugging
+  if (error) {
+    console.error('Templates fetch error:', error);
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -69,9 +73,16 @@ export default function TemplatesPage() {
       {isLoading && <LoadingScreen message="Loading templates..." />}
 
       {/* Error State */}
-      {error && (
+      {error && !isLoading && (
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4">
-          Failed to load templates. Please try again.
+          <p className="font-semibold">Failed to load templates</p>
+          <p className="text-sm mt-1">{String(error)}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+          >
+            Click to reload
+          </button>
         </div>
       )}
 

@@ -189,6 +189,102 @@ export const messages = {
       }
     });
   },
+
+  findAll: async (params?: { skip?: number; take?: number; orderBy?: 'asc' | 'desc'; where?: { clientId?: string; status?: string } }) => {
+    if (isMockMode) {
+      let messages = Array.from(mockDb.messages.values());
+
+      // Apply filters
+      if (params?.where?.clientId) {
+        messages = messages.filter(m => m.clientId === params.where?.clientId);
+      }
+      if (params?.where?.status) {
+        messages = messages.filter(m => m.status === params.where?.status);
+      }
+
+      // Sort
+      if (params?.orderBy === 'desc') {
+        messages.reverse();
+      }
+
+      // Apply pagination
+      const skip = params?.skip || 0;
+      const take = params?.take || undefined;
+
+      return messages.slice(skip, take ? skip + take : undefined).map(m => ({
+        id: m.id,
+        clientId: m.clientId,
+        campaignId: m.campaignId,
+        content: m.content,
+        status: m.status,
+        twilioSid: m.twilioSid,
+        errorMessage: m.errorMessage,
+        scheduledAt: m.scheduledAt?.toString() || null,
+        sentAt: m.sentAt?.toString() || null,
+        deliveredAt: null,
+        createdAt: m.createdAt.toISOString(),
+      }));
+    }
+    return prisma.message.findMany({
+      skip: params?.skip,
+      take: params?.take,
+      orderBy: { createdAt: params?.orderBy || 'asc' },
+      where: params?.where ? {
+        ...(params.where.clientId && { clientId: params.where.clientId }),
+        ...(params.where.status && { status: params.where.status as any }),
+      } : undefined,
+    });
+  },
+
+  count: async (where?: any) => {
+    if (isMockMode) {
+      return Array.from(mockDb.messages.values()).filter(m => {
+        if (!where) return true;
+        if (where.clientId && m.clientId !== where.clientId) return false;
+        if (where.status && m.status !== where.status) return false;
+        return true;
+      }).length;
+    }
+    return prisma.message.count({ where });
+  },
+
+  findById: async (id: string) => {
+    if (isMockMode) {
+      const msg = mockDb.messages.get(id);
+      if (!msg) return null;
+      return {
+        id: msg.id,
+        clientId: msg.clientId,
+        campaignId: msg.campaignId,
+        content: msg.content,
+        status: msg.status,
+        twilioSid: msg.twilioSid,
+        errorMessage: msg.errorMessage,
+        scheduledAt: msg.scheduledAt?.toString() || null,
+        sentAt: msg.sentAt?.toString() || null,
+        deliveredAt: (msg as any).deliveredAt?.toString() || null,
+        createdAt: msg.createdAt.toISOString(),
+      };
+    }
+    return prisma.message.findUnique({ where: { id } });
+  },
+
+  findByClientInbound: async (clientId: string) => {
+    if (isMockMode) {
+      return [];
+    }
+    return prisma.inboundMessage.findMany({
+      where: { clientId },
+      orderBy: { receivedAt: 'asc' },
+      select: {
+        id: true,
+        clientId: true,
+        twilioSid: true,
+        body: true,
+        receivedAt: true,
+      },
+    });
+  },
 };
 
 export default { clients, messages };

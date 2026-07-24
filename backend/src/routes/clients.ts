@@ -11,6 +11,9 @@ import { normalizeToE164 } from '../utils/index.js';
 
 const router = Router();
 
+// ALL client operations require authentication
+router.use(authenticate);
+
 // Helper to extract single string from query params (Express 5 compatible)
 function getQueryString(req: Request, key: string): string | undefined {
   const val = req.query[key];
@@ -23,7 +26,6 @@ function getQueryString(req: Request, key: string): string | undefined {
 /**
  * GET /clients
  * List all clients with pagination and filtering
- * PUBLIC - No auth required for reading
  */
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {

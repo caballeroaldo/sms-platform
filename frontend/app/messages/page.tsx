@@ -8,9 +8,13 @@
 import { useState } from 'react';
 import { useMessages, useSendMessage, useClients } from '@/lib/hooks/useApi';
 import { LoadingScreen, StatusBadge } from '@/lib/components/ui';
-import { mockMessages } from '@/lib/mockData';
+import { useRequireAuth } from '@/lib/components/ProtectedRoute';
+import type { Message } from '@/lib/types';
 
 export default function MessagesPage() {
+  // Protect this route - redirect to login if not authenticated
+  useRequireAuth();
+
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [showComposeModal, setShowComposeModal] = useState(false);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
@@ -33,11 +37,13 @@ export default function MessagesPage() {
     },
   });
 
-  // Use mock data for display
-  const messages = data?.messages || mockMessages.filter(m => {
-    if (!statusFilter) return true;
-    return m.status === statusFilter;
-  });
+  // Only use API data - no mock fallback
+  const messages: Message[] = data?.messages || [];
+
+  // Log error for debugging
+  if (error) {
+    console.error('Messages fetch error:', error);
+  }
 
   const handleSendMessage = () => {
     if (selectedClients.length === 0 || !messageContent.trim()) return;
@@ -102,9 +108,16 @@ export default function MessagesPage() {
       {isLoading && <LoadingScreen message="Loading messages..." />}
 
       {/* Error State */}
-      {error && (
+      {error && !isLoading && (
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4">
-          Failed to load messages. Please try again.
+          <p className="font-semibold">Failed to load messages</p>
+          <p className="text-sm mt-1">{String(error)}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+          >
+            Click to reload
+          </button>
         </div>
       )}
 

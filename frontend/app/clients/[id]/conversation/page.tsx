@@ -3,30 +3,41 @@
 /**
  * Client Conversation Page
  * Shows message history with a specific client in a chat-style interface
- *类似于 iOS Messages app 的对话视图
  */
 
 import { use, useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useClient, useMessages, useSendMessage } from '@/lib/hooks/useApi';
 import { LoadingScreen, StatusBadge } from '@/lib/components/ui';
-import { mockClients } from '@/lib/mockData';
 import type { Message } from '@/lib/types';
+import { useRequireAuth } from '@/lib/components/ProtectedRoute';
 
 interface ConversationPageProps {
   params: Promise<{ id: string }>;
 }
 
 export default function ConversationPage({ params }: ConversationPageProps) {
+  // Protect this route - redirect to login if not authenticated
+  useRequireAuth();
+
   const resolvedParams = use(params);
   const clientId = resolvedParams.id;
   const router = useRouter();
+  const queryClient = useQueryClient();
+
+  // Force fresh data when clientId changes (for navigation between clients)
+  useEffect(() => {
+    // Invalidate and refetch when clientId changes
+    queryClient.invalidateQueries({ queryKey: ['clients', clientId] });
+    queryClient.invalidateQueries({ queryKey: ['messages'] });
+  }, [clientId, queryClient]);
 
   // Fetch client details
-  const { data: clientData, isLoading: clientLoading } = useClient(clientId);
+  const { data: clientData, isLoading: clientLoading, error: clientError } = useClient(clientId);
 
   // Fetch messages for this client
-  const { data: messagesData, isLoading: messagesLoading } = useMessages({
+  const { data: messagesData, isLoading: messagesLoading, error: messagesError } = useMessages({
     clientId,
     limit: 100,
   });
@@ -45,8 +56,16 @@ export default function ConversationPage({ params }: ConversationPageProps) {
   const [messageText, setMessageText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Get client from mock data if API not available
-  const client = clientData || mockClients.find(c => c.id === clientId);
+  // Client from API only - no mock fallback (real CUIDs won't match mock IDs)
+  const client = clientData;
+
+  // Log errors for debugging
+  if (clientError) {
+    console.error('Client fetch error:', clientError);
+  }
+  if (messagesError) {
+    console.error('Messages fetch error:', messagesError);
+  }
 
   // Filter messages for this client - always use API data from mockState
   const allMessages = messagesData?.messages || [];
@@ -135,7 +154,11 @@ export default function ConversationPage({ params }: ConversationPageProps) {
     return (
       <div className="p-6 max-w-4xl mx-auto">
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4">
-          Client not found.
+          <p className="font-semibold">Client not found.</p>
+          <p className="text-sm mt-1">Client ID: {clientId}</p>
+          {clientError && (
+            <p className="text-sm mt-2 text-red-600">Error: {String(clientError)}</p>
+          )}
         </div>
         <button
           onClick={() => router.push('/clients')}

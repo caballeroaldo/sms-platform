@@ -5,9 +5,27 @@
  * Manages user authentication state across the application
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api, setAuthToken } from '@/lib/api';
 import type { User, LoginInput, RegisterInput, AuthResponse } from '@/lib/types';
+import { QueryClient } from '@tanstack/react-query';
+
+// Create a shared query client instance
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        // Don't retry on auth errors
+        if (error instanceof Error && error.message.includes('401')) {
+          return false;
+        }
+        return failureCount < 2;
+      },
+    },
+  },
+});
+
+export { queryClient };
 
 interface AuthContextType {
   user: User | null;
@@ -28,9 +46,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isInitialized = useRef(false);
 
   // Load user from localStorage on mount
   useEffect(() => {
+    if (isInitialized.current) return;
+    isInitialized.current = true;
+
     const storedToken = localStorage.getItem(TOKEN_KEY);
     const storedUser = localStorage.getItem(USER_KEY);
 
@@ -58,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!response.success || !response.data) {
         const errorMsg = response.error || 'Login failed';
         setError(errorMsg);
+        setIsLoading(false);
         return { success: false, error: errorMsg };
       }
 
@@ -70,10 +93,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAuthToken(token);
       setUser(userData);
 
+      // Clear any stale query cache from previous sessions
+      await queryClient.clear();
+
+      setIsLoading(false);
       return { success: true };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred';
       setError(errorMsg);
+      setIsLoading(false);
       return { success: false, error: errorMsg };
     } finally {
       setIsLoading(false);

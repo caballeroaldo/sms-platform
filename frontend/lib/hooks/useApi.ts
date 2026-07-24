@@ -17,6 +17,7 @@ import type {
   Message,
   DashboardStats,
 } from '@/lib/types';
+import { useAuth } from '@/lib/contexts/AuthContext';
 
 // ===========================================
 // Dashboard Hooks
@@ -45,6 +46,8 @@ interface UseClientsParams {
 }
 
 export function useClients(params?: UseClientsParams) {
+  const { isAuthenticated } = useAuth();
+
   return useQuery({
     queryKey: ['clients', params],
     queryFn: async () => {
@@ -52,10 +55,15 @@ export function useClients(params?: UseClientsParams) {
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
+    enabled: !!isAuthenticated,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 }
 
 export function useClient(id: string) {
+  const { isAuthenticated } = useAuth();
+
   return useQuery({
     queryKey: ['clients', id],
     queryFn: async () => {
@@ -63,7 +71,9 @@ export function useClient(id: string) {
       if (!response.success) throw new Error(response.error);
       return response.data as Client;
     },
-    enabled: !!id,
+    enabled: !!id && !!isAuthenticated,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -117,6 +127,8 @@ interface UseTemplatesParams {
 }
 
 export function useTemplates(params?: UseTemplatesParams) {
+  const { isAuthenticated } = useAuth();
+
   return useQuery({
     queryKey: ['templates', params],
     queryFn: async () => {
@@ -124,10 +136,15 @@ export function useTemplates(params?: UseTemplatesParams) {
       if (!response.success) throw new Error(response.error);
       return response.data as Template[];
     },
+    enabled: !!isAuthenticated,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 }
 
 export function useTemplate(id: string) {
+  const { isAuthenticated } = useAuth();
+
   return useQuery({
     queryKey: ['templates', id],
     queryFn: async () => {
@@ -135,7 +152,9 @@ export function useTemplate(id: string) {
       if (!response.success) throw new Error(response.error);
       return response.data as Template;
     },
-    enabled: !!id,
+    enabled: !!id && !!isAuthenticated,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -225,12 +244,27 @@ interface UseMessagesParams {
 }
 
 export function useMessages(params?: UseMessagesParams) {
+  const { isAuthenticated } = useAuth();
+
   return useQuery({
     queryKey: ['messages', params],
     queryFn: async () => {
       const response = await api.getMessages(params);
       if (!response.success) throw new Error(response.error);
       return response.data;
+    },
+    // Only run when authenticated
+    enabled: !!isAuthenticated,
+    // Don't cache - always fetch fresh data
+    staleTime: 0,
+    // Refetch when window regains focus
+    refetchOnWindowFocus: true,
+    // Retry less since 401s shouldn't be retried
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message.includes('401')) {
+        return false;
+      }
+      return failureCount < 2;
     },
   });
 }

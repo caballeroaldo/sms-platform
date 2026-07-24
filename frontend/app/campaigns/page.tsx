@@ -8,20 +8,25 @@
 import { useState } from 'react';
 import { useCampaigns } from '@/lib/hooks/useApi';
 import { LoadingScreen, StatusBadge } from '@/lib/components/ui';
-import { mockCampaigns } from '@/lib/mockData';
+import { useRequireAuth } from '@/lib/components/ProtectedRoute';
 
 export default function CampaignsPage() {
+  // Protect this route - redirect to login if not authenticated
+  useRequireAuth();
+
   const [statusFilter, setStatusFilter] = useState<string>('');
 
   const { data, isLoading, error } = useCampaigns({
     status: statusFilter || undefined,
   });
 
-  // Use mock data for display
-  const campaigns = data?.campaigns || mockCampaigns.filter(c => {
-    if (!statusFilter) return true;
-    return c.status === statusFilter;
-  });
+  // Only use API data - no mock fallback
+  const campaigns = data?.campaigns || [];
+
+  // Log error for debugging
+  if (error) {
+    console.error('Campaigns fetch error:', error);
+  }
 
   const statusOptions = [
     { value: '', label: 'All Status' },
@@ -67,9 +72,16 @@ export default function CampaignsPage() {
       {isLoading && <LoadingScreen message="Loading campaigns..." />}
 
       {/* Error State */}
-      {error && (
+      {error && !isLoading && (
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4">
-          Failed to load campaigns. Please try again.
+          <p className="font-semibold">Failed to load campaigns</p>
+          <p className="text-sm mt-1">{String(error)}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+          >
+            Click to reload
+          </button>
         </div>
       )}
 

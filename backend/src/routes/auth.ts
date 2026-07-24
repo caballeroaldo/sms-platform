@@ -87,7 +87,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       const token = jwt.sign(
         { userId: user.id, email: user.email, role: user.role },
         config.jwtSecret,
-        { expiresIn: parseInt(config.jwtExpiresIn, 10) }
+        { expiresIn: config.jwtExpiresIn }
       );
 
       res.status(201).json({
@@ -132,7 +132,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       config.jwtSecret,
-      { expiresIn: parseInt(config.jwtExpiresIn, 10) }
+      { expiresIn: config.jwtExpiresIn }
     );
 
     res.status(201).json({
@@ -178,7 +178,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       const token = jwt.sign(
         { userId: user.id, email: user.email, role: user.role },
         config.jwtSecret,
-        { expiresIn: parseInt(config.jwtExpiresIn, 10) }
+        { expiresIn: config.jwtExpiresIn }
       );
 
       res.json({
@@ -213,7 +213,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       config.jwtSecret,
-      { expiresIn: parseInt(config.jwtExpiresIn, 10) }
+      { expiresIn: config.jwtExpiresIn }
     );
 
     res.json({
