@@ -33,8 +33,14 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const limit = Math.min(100, Math.max(1, parseInt(getQueryString(req, 'limit') || '50', 10)));
     const skip = (page - 1) * limit;
     const search = getQueryString(req, 'search');
+    const optedOutParam = getQueryString(req, 'optedOut');
 
-    const result = await db.findMany({ skip, take: limit, search });
+    // Parse optedOut: if param is 'true' show opted-out, if 'false' show opted-in, if undefined show all
+    let optedOut: boolean | undefined = undefined;
+    if (optedOutParam === 'true') optedOut = true;
+    if (optedOutParam === 'false') optedOut = false;
+
+    const result = await db.findMany({ skip, take: limit, search, optedOut });
 
     res.json({
       success: true,

@@ -14,10 +14,33 @@ import type {
   Client,
   Template,
   Campaign,
-  Message,
   DashboardStats,
 } from '@/lib/types';
 import { useAuth } from '@/lib/contexts/AuthContext';
+import { useState, useEffect } from 'react';
+
+// ===========================================
+// Utility Hooks
+// ===========================================
+
+/**
+ * Debounce a value by the specified delay
+ */
+export function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
 
 // ===========================================
 // Dashboard Hooks
@@ -49,7 +72,8 @@ export function useClients(params?: UseClientsParams) {
   const { isAuthenticated } = useAuth();
 
   return useQuery({
-    queryKey: ['clients', params],
+    // Use spreadable key for stable comparison
+    queryKey: ['clients', params?.page ?? 1, params?.limit ?? 50, params?.search ?? '', params?.optedOut ?? 'all'],
     queryFn: async () => {
       const response = await api.getClients(params);
       if (!response.success) throw new Error(response.error);
@@ -58,6 +82,7 @@ export function useClients(params?: UseClientsParams) {
     enabled: !!isAuthenticated,
     staleTime: 0,
     refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 }
 
@@ -241,13 +266,16 @@ interface UseMessagesParams {
   status?: string;
   campaignId?: string;
   clientId?: string;
+  search?: string;
+  direction?: string;
 }
 
 export function useMessages(params?: UseMessagesParams) {
   const { isAuthenticated } = useAuth();
 
   return useQuery({
-    queryKey: ['messages', params],
+    // Use spreadable key for stable comparison
+    queryKey: ['messages', params?.page ?? 1, params?.limit ?? 50, params?.status ?? '', params?.clientId ?? '', params?.campaignId ?? '', params?.search ?? '', params?.direction ?? ''],
     queryFn: async () => {
       const response = await api.getMessages(params);
       if (!response.success) throw new Error(response.error);
@@ -259,6 +287,8 @@ export function useMessages(params?: UseMessagesParams) {
     staleTime: 0,
     // Refetch when window regains focus
     refetchOnWindowFocus: true,
+    // Refetch on mount to pick up filter changes
+    refetchOnMount: 'always',
     // Retry less since 401s shouldn't be retried
     retry: (failureCount, error) => {
       if (error instanceof Error && error.message.includes('401')) {

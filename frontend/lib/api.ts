@@ -447,13 +447,15 @@ export const api = USE_MOCK ? mockApi : {
     return apiFetch<Campaign>('/campaigns', { method: 'POST', body: JSON.stringify(input) });
   },
 
-  async getMessages(params?: { page?: number; limit?: number; status?: string; campaignId?: string; clientId?: string }) {
+  async getMessages(params?: { page?: number; limit?: number; status?: string; campaignId?: string; clientId?: string; search?: string; direction?: string }) {
     const query = new URLSearchParams();
     if (params?.page) query.set('page', String(params.page));
     if (params?.limit) query.set('limit', String(params.limit));
     if (params?.status) query.set('status', params.status);
     if (params?.campaignId) query.set('campaignId', params.campaignId);
     if (params?.clientId) query.set('clientId', params.clientId);
+    if (params?.search) query.set('search', params.search);
+    if (params?.direction) query.set('direction', params.direction);
     return apiFetch<{ messages: Message[]; pagination: { page: number; limit: number; total: number; pages: number } }>(`/messages?${query}`);
   },
 

@@ -42,6 +42,8 @@ A full-stack SMS automation platform for a small business serving ~200 clients. 
 - [x] Send messages to clients
 - [x] Mock data removed - now uses real API data
 - [x] Proper error display when API fails
+- [x] Header styling updated (description under title, compact button)
+- [x] Backend search API with debouncing (300ms delay on typing)
 
 ### Templates
 - [x] Templates list page
@@ -49,6 +51,7 @@ A full-stack SMS automation platform for a small business serving ~200 clients. 
 - [x] Mock data removed - now uses real API data
 - [x] Variable support display
 - [x] Proper error display
+- [x] Header styling updated (description under title, compact button)
 
 ### Campaigns
 - [x] Campaigns list page with status filtering
@@ -56,6 +59,7 @@ A full-stack SMS automation platform for a small business serving ~200 clients. 
 - [x] Stats display (delivered, sent, failed)
 - [x] Schedule time display
 - [x] Recurrence display
+- [x] Header styling updated (description under title, compact button)
 
 ### Messages
 - [x] Messages list page
@@ -63,6 +67,9 @@ A full-stack SMS automation platform for a small business serving ~200 clients. 
 - [x] Status filtering
 - [x] Mock data removed - now uses real API data
 - [x] Real-time message count per recipient
+- [x] Header styling updated (description under title, compact button)
+- [x] Backend search by client name with debouncing (300ms delay)
+- [x] Direction filter (inbound/outbound) with API support
 
 ### Dashboard
 - [x] Stats overview (clients, messages, campaigns, templates)
@@ -90,14 +97,14 @@ A full-stack SMS automation platform for a small business serving ~200 clients. 
 ## Remaining Tasks
 
 ### High Priority
-- [ ] Add client form (create new client)
-- [ ] Edit client form
-- [ ] Delete client with confirmation
-- [ ] Create template functionality
-- [ ] Edit template
-- [ ] Create campaign form
-- [ ] Edit campaign
-- [ ] Delete campaign
+- [ ] **Clients Page - Add Client Button**: Implement modal/form to create a new client (name, phone, email, notes)
+- [ ] **Clients Page - Edit Client Button**: Implement edit modal to update client details
+- [ ] **Clients Page - Delete Client Button**: Implement delete functionality with confirmation dialog
+- [ ] **Templates Page - New Template Button**: Implement modal/form to create a new template (name, category, content, variables)
+- [ ] **Templates Page - Edit Template Button**: Implement edit modal to update template details
+- [ ] **Templates Page - Preview Button**: Implement template preview with variable substitution UI
+- [ ] **Campaigns Page - New Campaign Button**: Implement modal/form to create a new campaign (name, description, template, schedule, recurrence)
+- [ ] **Campaigns Page - Edit Campaign Button**: Implement edit modal to update campaign details
 
 ### Medium Priority
 - [ ] Redis/BullMQ integration for async message sending
@@ -210,6 +217,20 @@ sms-platform/
 
 5. **Client Conversation Cache** - Added cache invalidation when switching between clients to ensure fresh data loads.
 
+6. **Header Styling** - Updated all page headers to match Dashboard styling:
+   - Description moved under the page title (inside the header div)
+   - Compact button styling with smaller padding and gap
+   - White text for titles, slate-300 for descriptions
+   - Consistent dark border-bottom styling
+
+7. **Non-Functional Buttons** - Identified that "Add Client", "New Template", and "New Campaign" buttons on list pages have no click handlers. Marked for implementation.
+
+8. **Search Filtering with Debouncing** - Implemented backend search API for clients page with 300ms debounce to prevent excessive API calls. Updated React Query key structure for proper cache invalidation on filter changes.
+
+9. **Messages Page Search & Direction Filter** - Added search by client name and direction (inbound/outbound) filtering to messages page with full backend API support. Includes client data in message responses.
+
+10. **Clients optedOut Filter** - Fixed the "Show opted-out" checkbox to properly filter clients via the backend API. Previously the filter wasn't being passed to the database layer.
+
 ---
 
 ## How to Continue
@@ -226,4 +247,4 @@ The frontend currently connects to the real backend (NEXT_PUBLIC_USE_MOCK=false)
 
 ---
 
-*Last Updated: July 24, 2025*
+*Last Updated: July 24, 2026*

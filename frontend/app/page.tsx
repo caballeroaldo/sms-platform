@@ -5,7 +5,6 @@
  * Main overview of SMS platform metrics
  */
 
-import { useState } from 'react';
 import { useDashboardStats, useMessages, useCampaigns } from '@/lib/hooks/useApi';
 import { StatCard, LoadingScreen, StatusBadge } from '@/lib/components/ui';
 import { useRequireAuth } from '@/lib/components/ProtectedRoute';
@@ -16,8 +15,8 @@ export default function DashboardPage() {
   useRequireAuth();
 
   const { data: stats, isLoading: statsLoading, error: statsError } = useDashboardStats();
-  const { data: messagesData, isLoading: messagesLoading } = useMessages({ limit: 5 });
-  const { data: campaignsData, isLoading: campaignsLoading } = useCampaigns({ status: 'RUNNING' });
+  const { data: messagesData } = useMessages({ limit: 5 });
+  const { data: campaignsData } = useCampaigns({ status: 'RUNNING' });
 
   // Log errors for debugging
   if (statsError) {
@@ -44,10 +43,10 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="text-slate-600 mt-1">Overview of your SMS platform metrics</p>
+      {/* Page Header - Dark theme matching navigation */}
+      <div className="mb-8 pb-6 border-b border-slate-600">
+        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+        <p className="text-slate-300 mt-1">Overview of your SMS platform metrics</p>
       </div>
 
       {/* Error State */}

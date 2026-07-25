@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useClients } from '@/lib/hooks/useApi';
+import { useClients, useDebounce } from '@/lib/hooks/useApi';
 import { LoadingScreen, StatusBadge } from '@/lib/components/ui';
 import { useRequireAuth } from '@/lib/components/ProtectedRoute';
 
@@ -18,9 +18,12 @@ export default function ClientsPage() {
   const [search, setSearch] = useState('');
   const [showOptedOut, setShowOptedOut] = useState(false);
 
+  // Debounce search to avoid excessive API calls (300ms delay)
+  const debouncedSearch = useDebounce(search, 300);
+
   // Get data from query
   const { data, isLoading, error } = useClients({
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     optedOut: showOptedOut ? undefined : false,
   });
 
@@ -34,15 +37,13 @@ export default function ClientsPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      {/* Page Header - Dark theme matching navigation */}
+      <div className="mb-6 pb-6 border-b border-slate-600 flex justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Clients</h1>
-          <p className="text-slate-600 mt-1">
-            Manage your SMS recipients and contacts
-          </p>
+          <h1 className="text-2xl font-bold text-white">Clients</h1>
+          <p className="text-slate-300 mt-1">Manage your SMS recipients and contacts</p>
         </div>
-        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
+        <button className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1">
           <span>+</span> Add Client
         </button>
       </div>
@@ -56,7 +57,7 @@ export default function ClientsPage() {
               placeholder="Search clients..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-700 placeholder:text-slate-400"
             />
           </div>
           <label className="flex items-center gap-2 cursor-pointer">

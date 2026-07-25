@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { useMessages, useSendMessage, useClients } from '@/lib/hooks/useApi';
+import { useMessages, useSendMessage, useClients, useDebounce } from '@/lib/hooks/useApi';
 import { LoadingScreen, StatusBadge } from '@/lib/components/ui';
 import { useRequireAuth } from '@/lib/components/ProtectedRoute';
 import type { Message } from '@/lib/types';
@@ -16,13 +16,19 @@ export default function MessagesPage() {
   useRequireAuth();
 
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [directionFilter, setDirectionFilter] = useState<string>('');
+  const [search, setSearch] = useState('');
   const [showComposeModal, setShowComposeModal] = useState(false);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [messageContent, setMessageContent] = useState('');
-  const [search, setSearch] = useState('');
+
+  // Debounce search to avoid excessive API calls (300ms delay)
+  const debouncedSearch = useDebounce(search, 300);
 
   const { data, isLoading, error } = useMessages({
     status: statusFilter || undefined,
+    search: debouncedSearch || undefined,
+    direction: directionFilter || undefined,
   });
 
   // For client selection in compose
@@ -64,17 +70,15 @@ export default function MessagesPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      {/* Page Header - Dark theme matching navigation */}
+      <div className="mb-6 pb-6 border-b border-slate-600 flex justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Messages</h1>
-          <p className="text-slate-600 mt-1">
-            View and send SMS messages
-          </p>
+          <h1 className="text-2xl font-bold text-white">Messages</h1>
+          <p className="text-slate-300 mt-1">View and send SMS messages</p>
         </div>
         <button
           onClick={() => setShowComposeModal(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
         >
           <span>✏️</span> Compose
         </button>
@@ -85,15 +89,24 @@ export default function MessagesPage() {
         <div className="flex flex-wrap items-center gap-4">
           <input
             type="text"
-            placeholder="Search messages..."
+            placeholder="Search by client name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex-1 min-w-[200px]"
+            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-700 placeholder:text-slate-400 min-w-[200px]"
           />
+          <select
+            value={directionFilter}
+            onChange={(e) => setDirectionFilter(e.target.value)}
+            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-700 bg-white"
+          >
+            <option value="">All Directions</option>
+            <option value="outbound">Outbound (Sent)</option>
+            <option value="inbound">Inbound (Received)</option>
+          </select>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-700 bg-white"
           >
             {statusOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>

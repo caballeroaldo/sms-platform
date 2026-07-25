@@ -12,22 +12,31 @@ export { mockDb };
 
 // Client operations
 export const clients = {
-  findMany: async (params?: { skip?: number; take?: number; search?: string }) => {
+  findMany: async (params?: { skip?: number; take?: number; search?: string; optedOut?: boolean }) => {
     if (isMockMode) {
       const clients = Array.from(mockDb.clients.values());
       const skip = params?.skip || 0;
       const take = params?.take || 50;
 
       let filtered = clients;
+
+      // Apply search filter
       if (params?.search) {
         const s = params.search.toLowerCase();
-        filtered = clients.filter(c =>
+        filtered = filtered.filter(c =>
           c.firstName.toLowerCase().includes(s) ||
           c.lastName.toLowerCase().includes(s) ||
           c.phone.includes(s) ||
           (c.email?.toLowerCase().includes(s) ?? false)
         );
       }
+
+      // Apply optedOut filter
+      if (params?.optedOut !== undefined) {
+        filtered = filtered.filter(c => c.optedOut === params.optedOut);
+      }
+
+      const total = filtered.length;
 
       return {
         clients: filtered.slice(skip, skip + take).map(c => ({
@@ -43,18 +52,35 @@ export const clients = {
           updatedAt: c.updatedAt.toISOString(),
           _count: { outboundMessages: 0, inboundMessages: 0 }
         })),
-        total: filtered.length,
+        total,
       };
+    }
+
+    // Build Prisma where clause for search
+    const where: any = {};
+    if (params?.search) {
+      const s = params.search;
+      where.OR = [
+        { firstName: { contains: s, mode: 'insensitive' } },
+        { lastName: { contains: s, mode: 'insensitive' } },
+        { phone: { contains: s } },
+        { email: { contains: s, mode: 'insensitive' } },
+      ];
+    }
+
+    if (params?.optedOut !== undefined) {
+      where.optedOut = params.optedOut;
     }
 
     const [clients, total] = await Promise.all([
       prisma.client.findMany({
+        where,
         skip: params?.skip,
         take: params?.take,
         orderBy: { updatedAt: 'desc' },
         include: { _count: { select: { outboundMessages: true, inboundMessages: true } } },
       }),
-      prisma.client.count(),
+      prisma.client.count({ where }),
     ]);
     return { clients, total };
   },
@@ -190,9 +216,22 @@ export const messages = {
     });
   },
 
-  findAll: async (params?: { skip?: number; take?: number; orderBy?: 'asc' | 'desc'; where?: { clientId?: string; status?: string } }) => {
+  findAll: async (params?: {
+    skip?: number;
+    take?: number;
+    orderBy?: 'asc' | 'desc';
+    where?: {
+      clientId?: string;
+      status?: string;
+      clientName?: string;
+      direction?: string;
+    };
+  }) => {
     if (isMockMode) {
       let messages = Array.from(mockDb.messages.values());
+
+      // Fetch clients for filtering
+      const clients = Array.from(mockDb.clients.values());
 
       // Apply filters
       if (params?.where?.clientId) {
@@ -200,6 +239,17 @@ export const messages = {
       }
       if (params?.where?.status) {
         messages = messages.filter(m => m.status === params.where?.status);
+      }
+      // Note: direction filtering not available in mock mode - all mock messages are outbound
+      if (params?.where?.clientName) {
+        const nameLower = params.where.clientName.toLowerCase();
+        const matchingClientIds = clients
+          .filter(c =>
+            c.firstName.toLowerCase().includes(nameLower) ||
+            c.lastName.toLowerCase().includes(nameLower)
+          )
+          .map(c => c.id);
+        messages = messages.filter(m => matchingClientIds.includes(m.clientId));
       }
 
       // Sort
@@ -225,27 +275,82 @@ export const messages = {
         createdAt: m.createdAt.toISOString(),
       }));
     }
+
+    // Build Prisma where clause
+    const where: any = {};
+    if (params?.where?.clientId) where.clientId = params.where.clientId;
+    if (params?.where?.status) where.status = params.where.status as any;
+
+    // For real database with client name search
+    if (params?.where?.clientName) {
+      where.client = {
+        OR: [
+          { firstName: { contains: params.where.clientName, mode: 'insensitive' } },
+          { lastName: { contains: params.where.clientName, mode: 'insensitive' } },
+        ],
+      };
+    }
+
     return prisma.message.findMany({
       skip: params?.skip,
       take: params?.take,
       orderBy: { createdAt: params?.orderBy || 'asc' },
-      where: params?.where ? {
-        ...(params.where.clientId && { clientId: params.where.clientId }),
-        ...(params.where.status && { status: params.where.status as any }),
-      } : undefined,
+      where,
+      include: {
+        client: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+          },
+        },
+      },
     });
   },
 
   count: async (where?: any) => {
     if (isMockMode) {
-      return Array.from(mockDb.messages.values()).filter(m => {
-        if (!where) return true;
-        if (where.clientId && m.clientId !== where.clientId) return false;
-        if (where.status && m.status !== where.status) return false;
-        return true;
-      }).length;
+      let messages = Array.from(mockDb.messages.values());
+      const clients = Array.from(mockDb.clients.values());
+
+      if (!where) return messages.length;
+
+      if (where.clientId) {
+        messages = messages.filter(m => m.clientId === where.clientId);
+      }
+      if (where.status) {
+        messages = messages.filter(m => m.status === where.status);
+      }
+      // Note: direction filtering not available in mock mode - all mock messages are outbound
+      if (where.clientName) {
+        const nameLower = where.clientName.toLowerCase();
+        const matchingClientIds = clients
+          .filter(c =>
+            c.firstName.toLowerCase().includes(nameLower) ||
+            c.lastName.toLowerCase().includes(nameLower)
+          )
+          .map(c => c.id);
+        messages = messages.filter(m => matchingClientIds.includes(m.clientId));
+      }
+
+      return messages.length;
     }
-    return prisma.message.count({ where });
+
+    // Build Prisma where clause
+    const prismaWhere: any = {};
+    if (where?.clientId) prismaWhere.clientId = where.clientId;
+    if (where?.status) prismaWhere.status = where.status;
+    if (where?.clientName) {
+      prismaWhere.client = {
+        OR: [
+          { firstName: { contains: where.clientName, mode: 'insensitive' } },
+          { lastName: { contains: where.clientName, mode: 'insensitive' } },
+        ],
+      };
+    }
+
+    return prisma.message.count({ where: prismaWhere });
   },
 
   findById: async (id: string) => {

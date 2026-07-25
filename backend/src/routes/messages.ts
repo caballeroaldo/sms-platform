@@ -152,22 +152,27 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
     const clientId = query.clientId as string | undefined;
     const status = query.status as string | undefined;
+    const clientName = query.search as string | undefined;
+    const direction = query.direction as string | undefined; // 'inbound' or 'outbound'
 
-    // Build Prisma where clause
-    const where: any = {};
-    if (clientId) where.clientId = clientId;
-    if (status) where.status = status;
+    // Build filter params
+    const filters: any = {};
+    if (clientId) filters.clientId = clientId;
+    if (status) filters.status = status;
+    if (clientName) filters.clientName = clientName;
+    if (direction) filters.direction = direction;
 
     // Use Prisma for real database
     const [messages, total] = await Promise.all([
-      dbMessages.findAll({ skip, take: limit, orderBy: 'desc', where }),
-      dbMessages.count(where),
+      dbMessages.findAll({ skip, take: limit, orderBy: 'desc', where: filters }),
+      dbMessages.count(filters),
     ]);
 
-    res.json({
-      success: true,
-      data: {
-        messages: messages.map(m => ({
+    // Fetch client data for each message
+    const messagesWithClients = await Promise.all(
+      messages.map(async (m) => {
+        const client = await dbClients.findUnique(m.clientId);
+        return {
           id: m.id,
           clientId: m.clientId,
           campaignId: m.campaignId,
@@ -176,7 +181,20 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
           sentAt: m.sentAt,
           deliveredAt: m.deliveredAt,
           createdAt: m.createdAt,
-        })),
+          client: client ? {
+            id: client.id,
+            firstName: client.firstName,
+            lastName: client.lastName,
+            phone: client.phone,
+          } : null,
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      data: {
+        messages: messagesWithClients,
         pagination: {
           page,
           limit,

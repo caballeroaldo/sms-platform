@@ -39,15 +39,13 @@ export default function TemplatesPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      {/* Page Header - Dark theme matching navigation */}
+      <div className="mb-6 pb-6 border-b border-slate-600 flex justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Templates</h1>
-          <p className="text-slate-600 mt-1">
-            Message templates with variable support
-          </p>
+          <h1 className="text-2xl font-bold text-white">Templates</h1>
+          <p className="text-slate-300 mt-1">Message templates with variable support</p>
         </div>
-        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
+        <button className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1">
           <span>+</span> New Template
         </button>
       </div>
@@ -58,7 +56,7 @@ export default function TemplatesPage() {
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-700 bg-white"
           >
             {categoryOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
