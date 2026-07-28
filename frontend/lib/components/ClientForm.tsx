@@ -111,7 +111,7 @@ export function ClientForm({ client, onSubmit, onCancel, isLoading }: ClientForm
           name="firstName"
           value={formData.firstName}
           onChange={handleChange}
-          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-colors ${
+          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors ${
             errors.firstName ? 'border-red-300 bg-red-50' : 'border-slate-300'
           }`}
           placeholder="John"
@@ -132,7 +132,7 @@ export function ClientForm({ client, onSubmit, onCancel, isLoading }: ClientForm
           name="lastName"
           value={formData.lastName}
           onChange={handleChange}
-          className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-colors"
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors"
           placeholder="Doe"
         />
       </div>
@@ -148,7 +148,7 @@ export function ClientForm({ client, onSubmit, onCancel, isLoading }: ClientForm
           name="phone"
           value={formData.phone}
           onChange={handleChange}
-          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-colors ${
+          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors ${
             errors.phone ? 'border-red-300 bg-red-50' : 'border-slate-300'
           }`}
           placeholder="+1 555-123-4567"
@@ -169,7 +169,7 @@ export function ClientForm({ client, onSubmit, onCancel, isLoading }: ClientForm
           name="email"
           value={formData.email}
           onChange={handleChange}
-          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-colors ${
+          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors ${
             errors.email ? 'border-red-300 bg-red-50' : 'border-slate-300'
           }`}
           placeholder="john@example.com"
@@ -190,7 +190,7 @@ export function ClientForm({ client, onSubmit, onCancel, isLoading }: ClientForm
           name="birthday"
           value={formData.birthday}
           onChange={handleChange}
-          className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-colors"
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors"
         />
       </div>
 
@@ -205,7 +205,7 @@ export function ClientForm({ client, onSubmit, onCancel, isLoading }: ClientForm
           value={formData.notes}
           onChange={handleChange}
           rows={3}
-          className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-colors resize-none"
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors resize-none"
           placeholder="Add any additional notes..."
         />
       </div>

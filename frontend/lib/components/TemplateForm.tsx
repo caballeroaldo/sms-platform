@@ -105,7 +105,7 @@ export function TemplateForm({ template, onSubmit, onCancel, isLoading }: Templa
           value={formData.name}
           onChange={handleChange}
           maxLength={100}
-          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors ${
             errors.name ? 'border-red-300 bg-red-50' : 'border-slate-300'
           }`}
           placeholder="Appointment Reminder"
@@ -125,7 +125,7 @@ export function TemplateForm({ template, onSubmit, onCancel, isLoading }: Templa
           name="category"
           value={formData.category}
           onChange={handleChange}
-          className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors"
         >
           {TEMPLATE_CATEGORIES.map((c) => (
             <option key={c.value} value={c.value}>
@@ -147,7 +147,7 @@ export function TemplateForm({ template, onSubmit, onCancel, isLoading }: Templa
           onChange={handleChange}
           rows={6}
           maxLength={1000}
-          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors resize-none font-mono text-sm ${
+          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors resize-none font-mono text-sm ${
             errors.content ? 'border-red-300 bg-red-50' : 'border-slate-300'
           }`}
           placeholder="Hi {{firstName}}, your appointment is on {{date}}."

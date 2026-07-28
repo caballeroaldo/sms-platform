@@ -90,7 +90,7 @@ export function ClientPicker({ selectedIds, onChange }: ClientPickerProps) {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search clients by name, phone, or email..."
-        className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+        className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 text-sm"
       />
 
       {/* Results */}
@@ -119,7 +119,7 @@ export function ClientPicker({ selectedIds, onChange }: ClientPickerProps) {
                       type="checkbox"
                       checked={checked}
                       onChange={() => handleToggle(client.id)}
-                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      className="w-4 h-4 rounded border-slate-300 text-slate-700 placeholder:text-slate-400 focus:ring-blue-500"
                     />
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm font-medium text-slate-900 truncate">

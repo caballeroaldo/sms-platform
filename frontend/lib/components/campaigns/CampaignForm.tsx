@@ -214,7 +214,7 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
           value={formData.name}
           onChange={handleChange}
           maxLength={100}
-          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors ${
             errors.name ? 'border-red-300 bg-red-50' : 'border-slate-300'
           }`}
           placeholder="Spring Promo 2026"
@@ -235,7 +235,7 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
           onChange={handleChange}
           rows={2}
           maxLength={500}
-          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors resize-none ${
+          className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors resize-none ${
             errors.description ? 'border-red-300 bg-red-50' : 'border-slate-300'
           }`}
           placeholder="Optional notes for the team"
@@ -255,7 +255,7 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
           name="templateId"
           value={formData.templateId || ''}
           onChange={handleChange}
-          className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors"
           disabled={isLoadingTemplates}
         >
           <option value="">— None —</option>
@@ -282,7 +282,7 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
             name="scheduleTime"
             value={formData.scheduleTime || ''}
             onChange={handleChange}
-            className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+            className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors ${
               errors.scheduleTime ? 'border-red-300 bg-red-50' : 'border-slate-300'
             }`}
           />
@@ -300,7 +300,7 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
             name="recurrence"
             value={formData.recurrence || 'NONE'}
             onChange={handleChange}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors"
           >
             {RECURRENCE_OPTIONS.map((r) => (
               <option key={r.value} value={r.value}>
@@ -332,7 +332,7 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
                   value={opt.value}
                   checked={checked}
                   onChange={() => handleAudienceChange(opt.value)}
-                  className="mt-0.5 w-4 h-4 border-slate-300 text-blue-600 focus:ring-blue-500"
+                  className="mt-0.5 w-4 h-4 border-slate-300 text-slate-700 placeholder:text-slate-400 focus:ring-blue-500"
                 />
                 <span className="flex-1">
                   <span className="block text-sm font-medium text-slate-900">{opt.title}</span>
