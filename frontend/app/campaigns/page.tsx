@@ -17,11 +17,18 @@
  */
 
 import { useState } from 'react';
-import { useCampaigns, useCreateCampaign, useUpdateCampaign, useDeleteCampaign } from '@/lib/hooks/useApi';
+import {
+  useCampaigns,
+  useCreateCampaign,
+  useUpdateCampaign,
+  useDeleteCampaign,
+  useSendCampaign,
+} from '@/lib/hooks/useApi';
 import { LoadingScreen, StatusBadge } from '@/lib/components/ui';
 import { useRequireAuth } from '@/lib/components/ProtectedRoute';
 import { Modal } from '@/lib/components/Modal';
 import { CampaignForm } from '@/lib/components/campaigns/CampaignForm';
+import { SendCampaignModal } from '@/lib/components/campaigns/SendCampaignModal';
 import { ConfirmDialog } from '@/lib/components/ConfirmDialog';
 import type { Campaign, CreateCampaignInput, AudienceType } from '@/lib/types';
 
@@ -57,7 +64,9 @@ export default function CampaignsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [deleteCampaignId, setDeleteCampaignId] = useState<string | null>(null);
+  const [sendCampaign, setSendCampaign] = useState<Campaign | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Data
   const { data, isLoading, error } = useCampaigns({
@@ -94,6 +103,22 @@ export default function CampaignsPage() {
     onError: (err) => setErrorMessage(err || 'Failed to delete campaign'),
   });
 
+  const sendCampaignMutation = useSendCampaign({
+    onSuccess: (result) => {
+      setSendCampaign(null);
+      setErrorMessage(null);
+      setSuccessMessage(
+        `Sent ${result.recipientCount.toLocaleString()} message${result.recipientCount === 1 ? '' : 's'} for "${sendCampaign?.name ?? 'campaign'}".`
+      );
+    },
+    onError: (err) => {
+      // Modal closes; the page-level banner surfaces the backend's specific 400
+      // (e.g. "No opted-in clients filed taxes in the prior calendar year").
+      setSendCampaign(null);
+      setErrorMessage(err || 'Failed to send campaign');
+    },
+  });
+
   // Handlers
   const handleAddClick = () => {
     setIsAddModalOpen(true);
@@ -127,6 +152,22 @@ export default function CampaignsPage() {
     }
   };
 
+  const handleSendClick = (campaign: Campaign) => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setSendCampaign(campaign);
+  };
+
+  const handleSendConfirm = () => {
+    if (sendCampaign) {
+      sendCampaignMutation.mutate(sendCampaign.id);
+    }
+  };
+
+  const handleSendCancel = () => {
+    setSendCampaign(null);
+  };
+
   if (error) {
     console.error('Campaigns fetch error:', error);
   }
@@ -134,6 +175,9 @@ export default function CampaignsPage() {
   // Per-status gating helpers
   const canEdit = (c: Campaign) => c.status === 'DRAFT' || c.status === 'SCHEDULED';
   const canDelete = (c: Campaign) => c.status !== 'RUNNING';
+  // Sending is allowed whenever the campaign is not already running. COMPLETED
+  // / CANCELLED re-sends are permitted by /:id/send (only RUNNING is rejected).
+  const canSend = (c: Campaign) => c.status !== 'RUNNING';
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -168,6 +212,25 @@ export default function CampaignsPage() {
           </button>
         </div>
       </div>
+      )}
+
+      {/* Success Banner (after send) */}
+      {successMessage && (
+        <div className="bg-green-50 border border-green-200 text-green-800 rounded-lg p-4 mb-4">
+          <div className="flex justify-between items-start gap-3">
+            <div>
+              <p className="font-semibold">Campaign sent</p>
+              <p className="text-sm mt-1">{successMessage}</p>
+           </div>
+            <button
+              onClick={() => setSuccessMessage(null)}
+              className="text-green-700 hover:text-green-900 text-xl leading-none"
+              aria-label="Dismiss"
+            >
+              ×
+           </button>
+         </div>
+       </div>
       )}
 
       {/* Filters */}
@@ -292,6 +355,14 @@ export default function CampaignsPage() {
                   )}
                   <div className="flex items-center gap-3">
                     <button
+                      onClick={() => handleSendClick(campaign)}
+                      disabled={!canSend(campaign)}
+                      title={canSend(campaign) ? 'Send campaign' : 'Campaign is already running'}
+                      className="text-xs text-green-700 hover:text-green-800 font-medium disabled:text-slate-300 disabled:cursor-not-allowed"
+                    >
+                      Send
+                </button>
+                    <button
                       onClick={() => handleEditClick(campaign)}
                       disabled={!canEdit(campaign)}
                       title={canEdit(campaign) ? 'Edit campaign' : 'Cannot edit a running or completed campaign'}
@@ -377,6 +448,14 @@ export default function CampaignsPage() {
         variant="danger"
         isLoading={deleteCampaign.isPending}
       />
+      {/* Send Confirmation */}
+      <SendCampaignModal
+        campaign={sendCampaign}
+        isOpen={!!sendCampaign}
+        onConfirm={handleSendConfirm}
+        onCancel={handleSendCancel}
+        isLoading={sendCampaignMutation.isPending}
+      />      
   </div>
   );
 }

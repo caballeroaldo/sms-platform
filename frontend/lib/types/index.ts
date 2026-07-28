@@ -243,3 +243,27 @@ export interface SendMessageResult {
   failed: number;
   errors?: string[];
 }
+
+// ===========================================
+// Campaign Send (POST /campaigns/:id/send)
+// ===========================================
+
+export interface SendCampaignResult {
+  campaignId: string;
+  recipientCount: number;
+}
+
+// ===========================================
+// Audience Count (GET /clients/count?audience=)
+// ===========================================
+
+/**
+ * Audience modes exposed by /clients/count. MANUAL is intentionally absent —
+ * the form composes MANUAL counts locally from the picked recipient IDs.
+ */
+export type CountAudienceMode = 'ALL' | 'PREV_YEAR_ACTIVE';
+
+export interface ClientCountResult {
+  count: number;
+  audience: CountAudienceMode;
+}

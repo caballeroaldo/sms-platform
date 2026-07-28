@@ -7,44 +7,14 @@ import prisma from '../prisma/client.js';
 import { authenticate } from '../middleware/index.js';
 import { CreateCampaignInput, UpdateCampaignInput, ApiResponse } from '../types/index.js';
 import { AudienceType } from '@prisma/client';
+import {
+  resolveAudienceClientIds,
+  emptyAudienceReason,
+} from '../utils/audience.js';
 
 const router = Router();
 
 router.use(authenticate);
-
-/**
- * Resolve the IDs of clients the campaign should target, given its audience
- * setting. Opted-out clients are always excluded. MANUAL is intersected with
- * the explicit recipient list (server is the source of truth — the UI should
- * already warn the user if they selected opted-out entries).
- */
-async function resolveAudienceClientIds(campaign: {
-  audience: AudienceType;
-  manualRecipientIds: string[];
-}): Promise<Array<{ id: string }>> {
-  if (campaign.audience === 'MANUAL') {
-    const ids = campaign.manualRecipientIds ?? [];
-    if (ids.length === 0) return [];
-    return prisma.client.findMany({
-      where: { id: { in: ids }, optedOut: false },
-      select: { id: true },
-    });
-  }
-  if (campaign.audience === 'PREV_YEAR_ACTIVE') {
-    const now = new Date();
-    const priorYearStart = new Date(Date.UTC(now.getUTCFullYear() - 1, 0, 1, 0, 0, 0));
-    const priorYearEnd = new Date(Date.UTC(now.getUTCFullYear() - 1, 11, 31, 23, 59, 59, 999));
-    return prisma.client.findMany({
-      where: {
-        optedOut: false,
-        taxFiledDate: { gte: priorYearStart, lte: priorYearEnd },
-      },
-      select: { id: true },
-    });
-  }
-  // ALL — current behavior
-  return prisma.client.findMany({ where: { optedOut: false }, select: { id: true } });
-}
 
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -188,11 +158,7 @@ router.post('/:id/send', async (req: Request, res: Response) => {
 
     const clients = await resolveAudienceClientIds(campaign);
     if (clients.length === 0) {
-      const emptyMessage =
-        campaign.audience === 'MANUAL' ? 'No recipients remain after filtering opted-out clients from the manual list' :
-        campaign.audience === 'PREV_YEAR_ACTIVE' ? 'No opted-in clients filed taxes in the prior calendar year' :
-        'No opted-in clients found';
-      res.status(400).json({ success: false, error: emptyMessage } as ApiResponse);
+      res.status(400).json({ success: false, error: emptyAudienceReason(campaign.audience) } as ApiResponse);
       return;
     }
 

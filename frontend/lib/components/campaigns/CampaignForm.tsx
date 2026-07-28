@@ -16,7 +16,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Campaign, CreateCampaignInput, AudienceType } from '@/lib/types';
-import { useTemplates } from '@/lib/hooks/useApi';
+import { useTemplates, useClientCount } from '@/lib/hooks/useApi';
 import { ClientPicker } from './ClientPicker';
 
 interface CampaignFormProps {
@@ -187,6 +187,19 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
   const isEditMode = !!campaign;
   const priorYearLabel = useMemo(() => priorTaxYearWindow(), []);
 
+  // Live audience-resolved count: server returns opted-in counts for ALL /
+  // PREV_YEAR_ACTIVE. The hook is disabled when audience is MANUAL because
+  // the picked ids live in local form state and the picker can give an
+  // instant count on its own.
+  const serverAudience = formData.audience === 'ALL' || formData.audience === 'PREV_YEAR_ACTIVE'
+    ? formData.audience
+    : undefined;
+  const { data: serverCount, isFetching: isFetchingCount } = useClientCount({
+    audience: serverAudience,
+  });
+
+  const manualPickedCount = (formData.manualRecipientIds ?? []).length;
+
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* Basics */}
@@ -331,6 +344,53 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
             );
           })}
        </div>
+
+        {/* Manual picker (only when selected) */}
+        {formData.audience !== 'MANUAL' && (
+          <p className="mt-3 pl-7 text-xs text-slate-600" data-testid="audience-count">
+            {formData.audience === 'PREV_YEAR_ACTIVE' && isFetchingCount ? (
+              <span className="text-slate-400">Counting opted-in clients from {priorYearLabel}…</span>
+            ) : formData.audience === 'PREV_YEAR_ACTIVE' && serverCount ? (
+              <>
+                Will target{' '}
+                <strong className="text-slate-900">
+                  {serverCount.count.toLocaleString()}
+               </strong>{' '}
+                opted-in client{serverCount.count === 1 ? '' : 's'} from {priorYearLabel}.
+                {serverCount.count === 0 && (
+                  <span className="block mt-1 text-amber-700">
+                    (audience will be empty — CSV import hasn&apos;t populated taxFiledDate yet.)
+                 </span>
+                )}
+             </>
+            ) : formData.audience === 'ALL' && serverCount ? (
+              <>
+                Will target{' '}
+                <strong className="text-slate-900">
+                  {serverCount.count.toLocaleString()}
+               </strong>{' '}
+                opted-in client{serverCount.count === 1 ? '' : 's'}.
+                {serverCount.count === 0 && (
+                  <span className="block mt-1 text-amber-700">
+                    (no opted-in clients exist yet.)
+                 </span>
+                )}
+             </>
+            ) : (
+              <span className="text-slate-400">Counting opted-in clients…</span>
+            )}
+        </p>
+        )}
+        {formData.audience === 'MANUAL' && (
+          <p className="mt-3 pl-7 text-xs text-slate-600">
+            Will target{' '}
+            <strong className="text-slate-900">
+              {manualPickedCount.toLocaleString()}
+           </strong>{' '}
+            client{manualPickedCount === 1 ? '' : 's'} from your manual selection.
+            Opted-out picks are filtered at send time.
+        </p>
+        )}
 
         {/* Manual picker (only when selected) */}
         {formData.audience === 'MANUAL' && (

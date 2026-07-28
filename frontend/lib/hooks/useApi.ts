@@ -15,6 +15,9 @@ import type {
   Template,
   Campaign,
   DashboardStats,
+  SendCampaignResult,
+  ClientCountResult,
+  CountAudienceMode,
 } from '@/lib/types';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useState, useEffect } from 'react';
@@ -395,6 +398,88 @@ export function useDeleteCampaign(options?: UseDeleteCampaignOptions) {
     onError: (error: Error) => {
       options?.onError?.(error.message);
     },
+  });
+}
+
+interface UseSendCampaignOptions {
+  onSuccess?: (result: SendCampaignResult) => void;
+  onError?: (error: string) => void;
+}
+
+/**
+ * POST /campaigns/:id/send — resolves the audience, creates PENDING messages,
+ * flips the campaign to RUNNING. The page surfaces the backend's specific 400
+ * (e.g. "No opted-in clients filed taxes in the prior calendar year") through
+ * onError so the user gets a context-aware empty-audience message.
+ */
+export function useSendCampaign(options?: UseSendCampaignOptions) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.sendCampaign(id);
+      if (!response.success) throw new Error(response.error || 'Failed to send campaign');
+      return response.data as SendCampaignResult;
+    },
+    onSuccess: (result, id) => {
+      // Invalidate campaign(s) — the flipped-to-RUNNING status + new stats
+      // need to show up, and we also need the messages list to reflect the
+      // newly created PENDING rows.
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', id] });
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      options?.onSuccess?.(result);
+    },
+    onError: (error: Error) => {
+      options?.onError?.(error.message);
+    },
+  });
+}
+
+// ===========================================
+// Client Count (preview audience size)
+// ===========================================
+
+interface UseClientCountParams {
+  /**
+   * Accepts the full {ALL, PREV_YEAR_ACTIVE, MANUAL} vocabulary so the form
+   * can pass its current audience without filtering first. The hook itself
+   * only queries the server for ALL/PREV_YEAR_ACTIVE — MANUAL is gated off
+   * via `params?.audience !== 'MANUAL'` below.
+   */
+  audience?: CountAudienceMode | 'MANUAL';
+}
+
+/**
+ * GET /clients/count?audience=ALL|PREV_YEAR_ACTIVE
+ * Used by the campaign form and the send-confirmation modal to show how many
+ * opted-in clients the chosen audience would resolve to before sending.
+ *
+ * MANUAL is intentionally handled by the component (the form holds the picked
+ * ids in local state, so `enabled: audience !== 'MANUAL'`).
+ */
+export function useClientCount(params?: UseClientCountParams) {
+  const { isAuthenticated } = useAuth();
+
+  // Strip MANUAL before forwarding — the server only handles ALL /
+  // PREV_YEAR_ACTIVE, and `enabled` below prevents this queryFn from
+  // running when the caller passed MANUAL anyway.
+  const apiParams: { audience?: CountAudienceMode } | undefined =
+    params && params.audience !== 'MANUAL' ? { audience: params.audience } : undefined;
+
+  return useQuery({
+    queryKey: ['clients', 'count', params?.audience ?? 'ALL'],
+    queryFn: async () => {
+      const response = await api.getClientCount(apiParams);
+      if (!response.success) throw new Error(response.error);
+      return response.data as ClientCountResult;
+    },
+    enabled: !!isAuthenticated && params?.audience !== 'MANUAL',
+    // Counts change only when a client is added/opted-out/refiled — a longer
+    // staleTime avoids re-fetching every focus event.
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 

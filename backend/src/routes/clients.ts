@@ -8,6 +8,9 @@ import { clients as db } from '../db/database.js';
 import { authenticate } from '../middleware/index.js';
 import type { CreateClientInput, ApiResponse } from '../types/index.js';
 import { normalizeToE164 } from '../utils/index.js';
+import { buildAudienceWhere } from '../utils/audience.js';
+import { AudienceType } from '@prisma/client';
+import prisma from '../prisma/client.js';
 
 const router = Router();
 
@@ -102,6 +105,32 @@ router.post('/', authenticate, async (req: Request, res: Response): Promise<void
   } catch (error) {
     console.error('Create client error:', error);
     res.status(500).json({ success: false, error: 'Failed to create client' } as ApiResponse);
+  }
+});
+
+/**
+ * GET /clients/count?audience=ALL|PREV_YEAR_ACTIVE
+ * Returns the count of opted-in clients targeted by the given audience.
+ * Used by the campaign form to preview audience size before sending.
+ * MANUAL is not supported here — the form composes MANUAL counts locally from
+ * the picked recipient IDs (which already require a separate client fetch).
+ */
+router.get('/count', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const audienceParam = (getQueryString(req, 'audience') ?? 'ALL') as AudienceType;
+    if (audienceParam !== 'ALL' && audienceParam !== 'PREV_YEAR_ACTIVE') {
+      res.status(400).json({
+        success: false,
+        error: 'audience must be one of: ALL, PREV_YEAR_ACTIVE',
+      } as ApiResponse);
+      return;
+    }
+    const where = buildAudienceWhere(audienceParam);
+    const count = await prisma.client.count({ where });
+    res.json({ success: true, data: { count, audience: audienceParam } } as ApiResponse);
+  } catch (error) {
+    console.error('Count clients error:', error);
+    res.status(500).json({ success: false, error: 'Failed to count clients' } as ApiResponse);
   }
 });
 

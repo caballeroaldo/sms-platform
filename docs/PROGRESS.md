@@ -132,8 +132,15 @@ A full-stack SMS automation platform for a small business serving ~200 clients. 
 
 **Worker + automation wiring:**
 
-- [ ] Message scheduling (future delivery) — BullMQ supports `delay` natively; wire `scheduledAt` from the campaigns route into the queue producer and verify the worker picks up delayed jobs.
+- [ ] Message scheduling (future delivery) — BullMQ supports `delay` natively; wire `scheduledAt` from the campaigns route into the queue producer and verify the worker picks up delayed jobs. **Current recommended next step** (see [Recommended next steps](#recommended-next-steps)). Gap: `POST /campaigns/:id/send` in [backend/src/routes/campaigns.ts](backend/src/routes/campaigns.ts) stamps `Message.scheduledAt` but never passes it as `delay` to `messageQueue.add(...)`. [backend/src/workers/messageWorker.ts](backend/src/workers/messageWorker.ts) polls every 60s as a fallback so messages still ship, but with up to a minute of jitter and no true delayed-delivery guarantees.
 - [ ] Campaign automation (birthday, recurring) — Recurrence rules (`daily`, `weekly`, `monthly`, `cron`) + a scheduler that enqueues per-window campaign runs. Not yet scoped.
+
+**UI polish — form readability:**
+
+- [ ] **Match form-input text + placeholder styling to the Messages-page search input** — Field inputs in modal forms inherit body color for their filled value and render the UA-default light gray for the placeholder — both too low-contrast against the modal's white surface. The platform's canonical reference is the Messages-page search input at [frontend/app/messages/page.tsx:95](frontend/app/messages/page.tsx#L95), which uses `text-slate-700 placeholder:text-slate-400 border border-slate-300 …`. The Clients-page search follows the same pattern at [frontend/app/clients/page.tsx:167](frontend/app/clients/page.tsx#L167), but modal forms drift from this convention (no `text-*` or `placeholder:*` token on their `<input>`/`<textarea>`/`<select>`).
+  - Affected: [`ClientForm.tsx`](frontend/lib/components/ClientForm.tsx) (5 inputs + textarea, ~lines 108 / 129 / 145 / 166 / 187 / 202), [`TemplateForm.tsx`](frontend/lib/components/TemplateForm.tsx) (input + select + textarea, ~lines 101 / 123 / 143), [`CampaignForm.tsx`](frontend/lib/components/campaigns/CampaignForm.tsx) (3 inputs + textarea + 2 selects + 3 audience radios, ~lines 210 / 231 / 253 / 279 / 298 / 329), [`ClientPicker.tsx`](frontend/lib/components/campaigns/ClientPicker.tsx) (search input + checkbox + checked-row label inputs, ~lines 88 / 118).
+  - Recommended fix: append `text-slate-700 placeholder:text-slate-400` to every `<input>` / `<textarea>` / `<select>` className, matching the Messages-page pattern. Preserve each form's existing focus-ring accent (cyan for the create/edit-client + create/edit-campaign forms, blue for templates + send-campaign + client-picker) — those are intentional and match the surrounding CTAs.
+  - Out of scope: dark-mode tokens (the app is dark-bg / widget-white today; treat as future work if a theme switcher is added).
 
 ### Lower Priority
 - [ ] **Fix `jsonwebtoken@9` overload errors in [backend/src/routes/auth.ts](backend/src/routes/auth.ts)** (lines 87, 132, 178, 213). Replace `Config.jwtExpiresIn: string` with a union that satisfies `jwt.SignOptions['expiresIn']` (`number | ms.StringValue | undefined`), or cast at the four call sites: `{ expiresIn: config.jwtExpiresIn as jwt.SignOptions['expiresIn'] }`. The env value `"604800"` is currently accepted at runtime; this is purely a type cleanup.
@@ -276,6 +283,16 @@ sms-platform/
    - **Type gap closed:** `CreateCampaignInput.recurrence` widened to include `'YEARLY'` to align with the Prisma enum (was a pre-existing inconsistency).
    - **Out of scope:** Campaign send (`POST /:id/send`) is now segmentation-aware when wired, but the SEND button itself is still not in the UI. CSV import (which populates `taxFiledDate`) also still pending.
 
+15. **Send Campaign + Live Audience Preview** — Wires the audience-aware `POST /campaigns/:id/send` endpoint into the UI and surfaces a live audience-resolved recipient count before sending. Mirrors the Templates preview/edit/delete mutation patterns; no new backend schema.
+   - **Backend:** New [backend/src/utils/audience.ts](backend/src/utils/audience.ts) extracts `buildAudienceWhere(audience, manualIds?)`, `resolveAudienceClientIds()`, and `emptyAudienceReason()` so the route and the count endpoint share one implementation. `routes/campaigns.ts` now imports from it. New `GET /clients/count?audience=ALL|PREV_YEAR_ACTIVE` in `routes/clients.ts` returns the opted-in client count for the requested audience, reusing `buildAudienceWhere`. `MANUAL` is intentionally rejected (it would require a recipient-id list, which a GET shouldn't carry).
+   - **Frontend types:** `lib/types/index.ts` adds `SendCampaignResult`, `ClientCountResult`, and `CountAudienceMode = 'ALL' | 'PREV_YEAR_ACTIVE'`.
+   - **API:** `lib/api.ts` adds `sendCampaign(id)` and `getClientCount({ audience })` in both real and mock branches. Mock mirrors the backend: rejects `RUNNING` / no-template / empty-audience, mirrors audience resolution, creates N `PENDING` Message rows, flips campaign → `RUNNING`, returns `{ campaignId, recipientCount }`.
+   - **Hooks:** `lib/hooks/useApi.ts` adds `useSendCampaign` (invalidates `['campaigns']`, `['campaigns', id]`, `['messages']`, `['dashboard']` on success so the messages view reflects the new `PENDING` rows immediately) and `useClientCount` (30s stale time, disabled for `MANUAL`).
+   - **NEW** [frontend/lib/components/campaigns/SendCampaignModal.tsx](frontend/lib/components/campaigns/SendCampaignModal.tsx) — three-section modal: Overview (audience + recipient count via `useClientCount`, `MANUAL` count derived locally from picked IDs), Message Preview (template content with `{{var}}` rendered as styled labels — same code path as the Templates preview), and a confirmation checkbox required to enable the Send CTA. The CTA stays disabled when there's no template, the recipient count is 0, or the campaign is already `RUNNING`.
+   - **Page wiring:** [frontend/app/campaigns/page.tsx](frontend/app/campaigns/page.tsx) adds a green Send button per card (next to Edit/Delete), gate-matched to `canSend = status !== 'RUNNING'`. The `useSendCampaign` mutation closes the modal on success and surfaces the backend's specific 400 string verbatim in the existing red banner — so "no opted-in clients filed taxes in the prior calendar year" becomes a contextual message rather than a 400 foot-gun.
+   - **Form:** [frontend/lib/components/campaigns/CampaignForm.tsx](frontend/lib/components/campaigns/CampaignForm.tsx) subscribes to `useClientCount` and renders a live count line below the audience radios: *"Will target N opted-in clients."* `MANUAL` derives the count locally from picked IDs. An inline `PREV_YEAR_ACTIVE` empty warning surfaces the CSV-import-not-yet-populated caveat before the user clicks Send.
+   - **Out of scope (current recommended next step):** `POST /campaigns/:id/send` still stamps `Message.scheduledAt` and drops it on the floor — the worker picks due messages up via a 60s polling sweep. Wiring `scheduledAt` into the BullMQ producer's `delay` field is tracked at [Medium Priority → Message scheduling](#medium-priority).
+
 ---
 
 ## Stack-Rank Notes
@@ -296,12 +313,12 @@ sms-platform/
 
 ### Recommended next steps (after this doc update)
 
-1. Settle the **number-type decision** (toll-free) and wire production Twilio env vars — Medium Priority.
-2. MMS support implementation — Medium Priority, *after* number type is chosen.
-3. Wire `scheduledAt` to the BullMQ `delay` field — Medium Priority.
-4. Wire up the **Send Campaign** button on the campaigns page now that `/campaigns/:id/send` is audience-aware.
-5. CSV import to populate `Client.taxFiledDate` — Lower Priority, but unblocks production `PREV_YEAR_ACTIVE` audiences.
-6. **Testing**: write integration tests for the new `PUT /clients/:id` (E.164 + duplicate path), `DELETE /clients/:id` (already-opted-out path), and the new `POST /campaigns` (audience validation + `MANUAL`-needs-≥1-recipient) *while the contracts are fresh* — before more endpoints accumulate on top.
+1. **Wire `scheduledAt` to the BullMQ `delay` field** — Medium Priority. **Current recommended next step** after entry #15. Local change, no Twilio-side dependency, removes the 60s polling jitter on delayed deliveries. See [Medium Priority → Message scheduling](#medium-priority).
+2. Settle the **number-type decision** (toll-free) and wire production Twilio env vars — Medium Priority. Prerequisite for live-SMS testing of #1's downstream effects and for MMS support.
+3. MMS support implementation — Medium Priority, *after* number type is chosen.
+4. ~~Wire up the Send Campaign button~~ — **Done** in entry #15 above. The Send modal + audience preview are wired against `POST /campaigns/:id/send`. `PREV_YEAR_ACTIVE` will still resolve to an empty set until #5 ships CSV import.
+5. CSV import to populate `Client.taxFiledDate` — Lower Priority, but unblocks production `PREV_YEAR_ACTIVE` audiences and is the only remaining gap before the Campaigns Send button is fully useful end-to-end.
+6. **Testing**: write integration tests for the new `PUT /clients/:id` (E.164 + duplicate path), `DELETE /clients/:id` (already-opted-out path), the new `POST /campaigns` (audience validation + `MANUAL`-needs-≥1-recipient), `POST /campaigns/:id/send` (audience resolution + status flip + recipient creation), and `GET /clients/count` (audience parity) *while the contracts are fresh* — before more endpoints accumulate on top.
 
 ## How to Continue
 
@@ -317,7 +334,7 @@ The frontend currently connects to the real backend (NEXT_PUBLIC_USE_MOCK=false)
 
 ---
 
-*Last Updated: July 27, 2026*
+*Last Updated: July 28, 2026*
 
 ## Project Structure
 

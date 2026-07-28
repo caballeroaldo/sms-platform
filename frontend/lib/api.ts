@@ -19,6 +19,9 @@ import type {
   AuthResponse,
   SendMessageInput,
   SendMessageResult,
+  SendCampaignResult,
+  CountAudienceMode,
+  ClientCountResult,
   ApiResponse,
 } from '@/lib/types';
 
@@ -408,6 +411,93 @@ const mockApi = {
     return { success: true, data: removed, message: 'Campaign deleted' };
   },
 
+  async sendCampaign(id: string): Promise<ApiResponse<SendCampaignResult>> {
+    await simulateDelay();
+    const index = mockState.campaigns.findIndex(c => c.id === id);
+    if (index === -1) return { success: false, error: 'Campaign not found' };
+    const campaign = mockState.campaigns[index];
+    if (campaign.status === 'RUNNING') {
+      return { success: false, error: 'Campaign is already running' };
+    }
+    if (!campaign.templateId) {
+      return { success: false, error: 'Campaign has no template' };
+    }
+    const template = mockState.templates.find(t => t.id === campaign.templateId);
+    if (!template) return { success: false, error: 'Campaign has no template' };
+    // Mirror backend's resolveAudienceClientIds: exclude opted-out, intersect MANUAL
+    // by manualRecipientIds, and require at least one resolved recipient.
+    let resolved: Client[] = mockState.clients.filter((c) => !c.optedOut);
+    if (campaign.audience === 'MANUAL') {
+      const ids = campaign.manualRecipientIds ?? [];
+      if (ids.length === 0) {
+        return { success: false, error: 'Manual audience requires at least one recipient' };
+      }
+      const allowed = new Set(ids);
+      resolved = resolved.filter((c) => allowed.has(c.id));
+    } else if (campaign.audience === 'PREV_YEAR_ACTIVE') {
+      const now = new Date();
+      const priorYear = now.getUTCFullYear() - 1;
+      const priorStart = new Date(Date.UTC(priorYear, 0, 1, 0, 0, 0));
+      const priorEnd = new Date(Date.UTC(priorYear, 11, 31, 23, 59, 59, 999));
+      resolved = resolved.filter((c) => {
+        if (!c.taxFiledDate) return false;
+        const d = new Date(c.taxFiledDate);
+        return d >= priorStart && d <= priorEnd;
+      });
+    }
+    if (resolved.length === 0) {
+      const empty =
+        campaign.audience === 'MANUAL'
+          ? 'No recipients remain after filtering opted-out clients from the manual list'
+          : campaign.audience === 'PREV_YEAR_ACTIVE'
+            ? 'No opted-in clients filed taxes in the prior calendar year'
+            : 'No opted-in clients found';
+      return { success: false, error: empty };
+    }
+    // Stamp PENDING messages, mirroring backend: createMany + status flip
+    const now = new Date().toISOString();
+    const newMessages: Message[] = resolved.map((c) => ({
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+      clientId: c.id,
+      campaignId: campaign.id,
+      content: template.content,
+      status: 'PENDING' as const,
+      twilioSid: null,
+      errorMessage: null,
+      scheduledAt: campaign.scheduleTime || null,
+      sentAt: null,
+      createdAt: now,
+      type: 'outbound' as const,
+      client: { id: c.id, firstName: c.firstName, lastName: c.lastName, phone: c.phone },
+    }));
+    mockState.messages.push(...newMessages);
+    mockState.campaigns[index] = { ...campaign, status: 'RUNNING', updatedAt: now };
+    return {
+      success: true,
+      data: { campaignId: id, recipientCount: resolved.length },
+    };
+  },
+
+  async getClientCount(params?: {
+    audience?: CountAudienceMode;
+  }): Promise<ApiResponse<ClientCountResult>> {
+    await simulateDelay();
+    const audience = params?.audience ?? 'ALL';
+    const priorYear = new Date().getUTCFullYear() - 1;
+    const priorStart = new Date(Date.UTC(priorYear, 0, 1, 0, 0, 0));
+    const priorEnd = new Date(Date.UTC(priorYear, 11, 31, 23, 59, 59, 999));
+    let count = mockState.clients.filter((c) => !c.optedOut).length;
+    if (audience === 'PREV_YEAR_ACTIVE') {
+      count = mockState.clients.filter((c) => {
+        if (c.optedOut) return false;
+        if (!c.taxFiledDate) return false;
+        const d = new Date(c.taxFiledDate);
+        return d >= priorStart && d <= priorEnd;
+      }).length;
+    }
+    return { success: true, data: { count, audience } };
+  },
+
   // Messages
   async getMessages(params?: {
     page?: number;
@@ -570,6 +660,17 @@ export const api = USE_MOCK ? mockApi : {
 
   async deleteCampaign(id: string) {
     return apiFetch<Campaign>(`/campaigns/${id}`, { method: 'DELETE' });
+  },
+
+  async sendCampaign(id: string) {
+    return apiFetch<SendCampaignResult>(`/campaigns/${id}/send`, { method: 'POST' });
+  },
+
+  async getClientCount(params?: { audience?: CountAudienceMode }) {
+    const query = new URLSearchParams();
+    if (params?.audience) query.set('audience', params.audience);
+    const qs = query.toString();
+    return apiFetch<ClientCountResult>(`/clients/count${qs ? `?${qs}` : ''}`);
   },
 
   async getMessages(params?: { page?: number; limit?: number; status?: string; campaignId?: string; clientId?: string; search?: string; direction?: string }) {
