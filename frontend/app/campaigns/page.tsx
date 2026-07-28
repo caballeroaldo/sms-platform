@@ -2,52 +2,173 @@
 
 /**
  * Campaigns Page
- * List and manage SMS campaigns
+ *
+ * CRUD for SMS campaigns. Backend already exposes
+ *   POST   /campaigns
+ *   GET    /campaigns/:id
+ *   PUT    /campaigns/:id
+ *   DELETE /campaigns/:id
+ * (plus /:id/send, not wired in this view).
+ *
+ * Per backend contract:
+ *   - Editing is rejected on RUNNING / COMPLETED campaigns ("Cannot update…")
+ *   - Deletion is rejected on RUNNING campaigns ("Cancel the campaign first")
+ *   - MANUAL audience must include at least one recipient id
  */
 
 import { useState } from 'react';
-import { useCampaigns } from '@/lib/hooks/useApi';
+import { useCampaigns, useCreateCampaign, useUpdateCampaign, useDeleteCampaign } from '@/lib/hooks/useApi';
 import { LoadingScreen, StatusBadge } from '@/lib/components/ui';
 import { useRequireAuth } from '@/lib/components/ProtectedRoute';
+import { Modal } from '@/lib/components/Modal';
+import { CampaignForm } from '@/lib/components/campaigns/CampaignForm';
+import { ConfirmDialog } from '@/lib/components/ConfirmDialog';
+import type { Campaign, CreateCampaignInput, AudienceType } from '@/lib/types';
+
+const AUDIENCE_LABELS: Record<AudienceType, string> = {
+  ALL: 'All opted-in clients',
+  PREV_YEAR_ACTIVE: 'Previous tax year active',
+  MANUAL: 'Manual selection',
+};
+
+const STATUS_OPTIONS = [
+  { value: '', label: 'All Status' },
+  { value: 'DRAFT', label: 'Draft' },
+  { value: 'SCHEDULED', label: 'Scheduled' },
+  { value: 'RUNNING', label: 'Running' },
+  { value: 'COMPLETED', label: 'Completed' },
+];
+
+const AUDIENCE_FILTER_OPTIONS = [
+  { value: '', label: 'All Audiences' },
+  ...(Object.entries(AUDIENCE_LABELS) as [AudienceType, string][]).map(([value, label]) => ({ value, label })),
+];
 
 export default function CampaignsPage() {
-  // Protect this route - redirect to login if not authenticated
   useRequireAuth();
 
+  // Status filter (backend)
   const [statusFilter, setStatusFilter] = useState<string>('');
+  // Audience filter (client-side — keeping it local to the page for now)
+  const [audienceFilter, setAudienceFilter] = useState<string>('');
 
+  // Modal / selection state
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [deleteCampaignId, setDeleteCampaignId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Data
   const { data, isLoading, error } = useCampaigns({
     status: statusFilter || undefined,
   });
+  const allCampaigns = (data?.campaigns ?? []) as Campaign[];
+  const campaigns = audienceFilter
+    ? allCampaigns.filter((c) => c.audience === audienceFilter)
+    : allCampaigns;
 
-  // Only use API data - no mock fallback
-  const campaigns = data?.campaigns || [];
+  // Mutations
+  const createCampaign = useCreateCampaign({
+    onSuccess: () => {
+      setIsAddModalOpen(false);
+      setErrorMessage(null);
+    },
+    onError: (err) => setErrorMessage(err || 'Failed to create campaign'),
+  });
 
-  // Log error for debugging
+  const updateCampaign = useUpdateCampaign({
+    onSuccess: () => {
+      setIsEditModalOpen(false);
+      setSelectedCampaign(null);
+      setErrorMessage(null);
+    },
+    onError: (err) => setErrorMessage(err || 'Failed to update campaign'),
+  });
+
+  const deleteCampaign = useDeleteCampaign({
+    onSuccess: () => {
+      setDeleteCampaignId(null);
+      setErrorMessage(null);
+    },
+    onError: (err) => setErrorMessage(err || 'Failed to delete campaign'),
+  });
+
+  // Handlers
+  const handleAddClick = () => {
+    setIsAddModalOpen(true);
+    setErrorMessage(null);
+  };
+
+  const handleEditClick = (campaign: Campaign) => {
+    setSelectedCampaign(campaign);
+    setIsEditModalOpen(true);
+    setErrorMessage(null);
+  };
+
+  const handleDeleteClick = (campaign: Campaign) => {
+    setDeleteCampaignId(campaign.id);
+    setErrorMessage(null);
+  };
+
+  const handleAddSubmit = (input: CreateCampaignInput) => {
+    createCampaign.mutate(input);
+  };
+
+  const handleEditSubmit = (input: CreateCampaignInput) => {
+    if (selectedCampaign) {
+      updateCampaign.mutate({ id: selectedCampaign.id, data: input });
+    }
+  };
+
+  const handleDeleteConfirm = () => {
+    if (deleteCampaignId) {
+      deleteCampaign.mutate(deleteCampaignId);
+    }
+  };
+
   if (error) {
     console.error('Campaigns fetch error:', error);
   }
 
-  const statusOptions = [
-    { value: '', label: 'All Status' },
-    { value: 'DRAFT', label: 'Draft' },
-    { value: 'SCHEDULED', label: 'Scheduled' },
-    { value: 'RUNNING', label: 'Running' },
-    { value: 'COMPLETED', label: 'Completed' },
-  ];
+  // Per-status gating helpers
+  const canEdit = (c: Campaign) => c.status === 'DRAFT' || c.status === 'SCHEDULED';
+  const canDelete = (c: Campaign) => c.status !== 'RUNNING';
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      {/* Page Header - Dark theme matching navigation */}
+      {/* Page Header */}
       <div className="mb-6 pb-6 border-b border-slate-600 flex justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Campaigns</h1>
           <p className="text-slate-300 mt-1">Manage your SMS marketing campaigns</p>
-        </div>
-        <button className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1">
-          <span>+</span> New Campaign
-        </button>
       </div>
+        <button
+          onClick={handleAddClick}
+          className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
+        >
+          <span>+</span> New Campaign
+      </button>
+    </div>
+
+      {/* Error Banner */}
+      {errorMessage && (
+        <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 mb-4">
+          <div className="flex justify-between items-start gap-3">
+            <div>
+              <p className="font-semibold">Something went wrong</p>
+              <p className="text-sm mt-1">{errorMessage}</p>
+          </div>
+            <button
+              onClick={() => setErrorMessage(null)}
+              className="text-red-600 hover:text-red-800 text-xl leading-none"
+              aria-label="Dismiss"
+            >
+              ×
+          </button>
+        </div>
+      </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
@@ -57,39 +178,44 @@ export default function CampaignsPage() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-700 bg-white"
           >
-            {statusOptions.map((opt) => (
+            {STATUS_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
-              </option>
+            </option>
             ))}
-          </select>
-        </div>
+        </select>
+          <select
+            value={audienceFilter}
+            onChange={(e) => setAudienceFilter(e.target.value)}
+            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-700 bg-white"
+          >
+            {AUDIENCE_FILTER_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+            </option>
+            ))}
+        </select>
       </div>
+    </div>
 
-      {/* Loading State */}
+      {/* Loading */}
       {isLoading && <LoadingScreen message="Loading campaigns..." />}
 
-      {/* Error State */}
+      {/* Fetch Error */}
       {error && !isLoading && (
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4">
           <p className="font-semibold">Failed to load campaigns</p>
           <p className="text-sm mt-1">{String(error)}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-2 text-sm text-blue-600 hover:text-blue-800"
-          >
-            Click to reload
-          </button>
-        </div>
+      </div>
       )}
 
-      {/* Campaigns Grid */}
+      {/* Campaign Grid */}
       {!isLoading && !error && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {campaigns.length === 0 ? (
             <div className="col-span-full bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
               <p className="text-slate-500">No campaigns found</p>
-            </div>
+          </div>
           ) : (
             campaigns.map((campaign) => (
               <div
@@ -100,21 +226,30 @@ export default function CampaignsPage() {
                   <div className="flex items-start justify-between mb-4">
                     <h3 className="text-lg font-semibold text-slate-900">
                       {campaign.name}
-                    </h3>
+                  </h3>
                     <StatusBadge status={campaign.status} />
-                  </div>
+                </div>
                   {campaign.description && (
                     <p className="text-sm text-slate-600 mb-4 line-clamp-2">
                       {campaign.description}
-                    </p>
+                </p>
                   )}
                   <div className="space-y-2">
                     {campaign.template && (
                       <div className="flex items-center gap-2 text-sm text-slate-500">
                         <span>📝</span>
                         <span>{campaign.template.name}</span>
-                      </div>
+                    </div>
                     )}
+                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                      <span>👥</span>
+                      <span>{AUDIENCE_LABELS[campaign.audience]}</span>
+                      {campaign.audience === 'MANUAL' && (
+                        <span className="text-xs text-slate-400">
+                          ({campaign.manualRecipientIds.length} selected)
+                      </span>
+                      )}
+                  </div>
                     {campaign.scheduleTime && (
                       <div className="flex items-center gap-2 text-sm text-slate-500">
                         <span>📅</span>
@@ -126,47 +261,122 @@ export default function CampaignsPage() {
                             hour: '2-digit',
                             minute: '2-digit',
                           })}
-                        </span>
-                      </div>
+                      </span>
+                    </div>
                     )}
-                    {campaign.recurrence && (
+                    {campaign.recurrence && campaign.recurrence !== 'NONE' && (
                       <div className="flex items-center gap-2 text-sm text-slate-500">
                         <span>🔄</span>
                         <span>{campaign.recurrence}</span>
-                      </div>
+                    </div>
                     )}
-                  </div>
                 </div>
-                {/* Stats Bar */}
-                {campaign.stats && (
-                  <div className="px-6 py-4 bg-slate-50 border-t border-slate-200">
+              </div>
+
+                {/* Stats / Actions footer */}
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                  {campaign.stats ? (
                     <div className="flex gap-4 text-sm">
                       <span className="text-emerald-600">
                         ✓ {campaign.stats.DELIVERED || 0}
-                      </span>
+                     </span>
                       <span className="text-purple-600">
-                        → {campaign.stats.SENT - (campaign.stats.DELIVERED || 0)}
-                      </span>
+                        → {(campaign.stats.SENT || 0) - (campaign.stats.DELIVERED || 0)}
+                     </span>
                       <span className="text-red-500">
                         ✗ {campaign.stats.FAILED || 0}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                     </span>
+                   </div>
+                  ) : (
+                    <span />
+                  )}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleEditClick(campaign)}
+                      disabled={!canEdit(campaign)}
+                      title={canEdit(campaign) ? 'Edit campaign' : 'Cannot edit a running or completed campaign'}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:text-slate-300 disabled:cursor-not-allowed"
+                    >
+                      Edit
+                  </button>
+                    <button
+                      onClick={() => handleDeleteClick(campaign)}
+                      disabled={!canDelete(campaign)}
+                      title={canDelete(campaign) ? 'Delete campaign' : 'Cancel the campaign first'}
+                      className="text-xs text-red-600 hover:text-red-700 font-medium disabled:text-slate-300 disabled:cursor-not-allowed"
+                    >
+                      Delete
+                  </button>
+                </div>
               </div>
+            </div>
             ))
           )}
-        </div>
+      </div>
       )}
 
-      {/* Pagination */}
-      {data?.pagination && data.pagination.pages > 1 && (
+      {/* Pagination (status filter only; no client-side pagination for audience filter) */}
+      {!isLoading && !error && data?.pagination && data.pagination.pages > 1 && !audienceFilter && (
         <div className="mt-6 flex justify-center">
           <div className="text-sm text-slate-600">
             Page {data.pagination.page} of {data.pagination.pages}
-          </div>
         </div>
+      </div>
       )}
-    </div>
+
+      {/* Add Campaign Modal */}
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        title="New Campaign"
+        size="lg"
+      >
+        <CampaignForm
+          onSubmit={handleAddSubmit}
+          onCancel={() => setIsAddModalOpen(false)}
+          isLoading={createCampaign.isPending}
+        />
+    </Modal>
+
+      {/* Edit Campaign Modal */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setSelectedCampaign(null);
+        }}
+        title={selectedCampaign ? `Edit Campaign: ${selectedCampaign.name}` : 'Edit Campaign'}
+        size="lg"
+      >
+        {selectedCampaign && (
+          <CampaignForm
+            campaign={selectedCampaign}
+            onSubmit={handleEditSubmit}
+            onCancel={() => {
+              setIsEditModalOpen(false);
+              setSelectedCampaign(null);
+            }}
+            isLoading={updateCampaign.isPending}
+          />
+        )}
+    </Modal>
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        isOpen={!!deleteCampaignId}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteCampaignId(null)}
+        title="Delete Campaign"
+        message={
+          selectedCampaign && deleteCampaignId === selectedCampaign.id
+            ? `Are you sure you want to delete "${selectedCampaign.name}"? This will also delete its messages and cannot be undone.`
+            : 'Are you sure you want to delete this campaign? This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        isLoading={deleteCampaign.isPending}
+      />
+  </div>
   );
 }

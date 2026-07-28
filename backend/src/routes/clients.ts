@@ -135,6 +135,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 router.put('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params['id'] as string;
+    const input = req.body;
 
     const existing = await db.findUnique(id);
     if (!existing) {
@@ -142,8 +143,35 @@ router.put('/:id', authenticate, async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    // In a full implementation, would update via db.update()
-    res.json({ success: true, data: existing } as ApiResponse);
+    // If phone is being updated, validate and check for duplicates
+    if (input.phone && input.phone !== existing.phone) {
+      let phone: string;
+      try {
+        phone = normalizeToE164(input.phone);
+        if (!phone) throw new Error('Invalid phone number');
+      } catch {
+        res.status(400).json({ success: false, error: 'Invalid phone number format' } as ApiResponse);
+        return;
+      }
+      input.phone = phone;
+
+      const existingPhone = await db.findByPhone(phone);
+      if (existingPhone && existingPhone.id !== id) {
+        res.status(409).json({ success: false, error: 'A client with this phone number already exists' } as ApiResponse);
+        return;
+      }
+    }
+
+    const updated = await db.update(id, {
+      firstName: input.firstName,
+      lastName: input.lastName,
+      phone: input.phone,
+      email: input.email,
+      birthday: input.birthday,
+      notes: input.notes,
+    });
+
+    res.json({ success: true, data: updated } as ApiResponse);
   } catch (error) {
     console.error('Update client error:', error);
     res.status(500).json({ success: false, error: 'Failed to update client' } as ApiResponse);
@@ -164,10 +192,16 @@ router.delete('/:id', authenticate, async (req: Request, res: Response): Promise
       return;
     }
 
-    res.json({ success: true, message: 'Client opted out' } as ApiResponse);
+    if (client.optedOut) {
+      res.status(400).json({ success: false, error: 'Client is already opted out' } as ApiResponse);
+      return;
+    }
+
+    const deleted = await db.delete(id);
+    res.json({ success: true, data: deleted, message: 'Client opted out successfully' } as ApiResponse);
   } catch (error) {
     console.error('Delete client error:', error);
-    res.status(500).json({ success: false, error: 'Failed to delete client' } as ApiResponse);
+    res.status(500).json({ success: false, error: 'Failed to opt out client' } as ApiResponse);
   }
 });
 

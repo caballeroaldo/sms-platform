@@ -18,6 +18,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "SMS Platform",
   description: "SMS Automation Platform - Manage clients, campaigns, and messages",
+  icons: {
+    icon: '/icon-chat-dots.svg',
+  },
 };
 
 export default function RootLayout({

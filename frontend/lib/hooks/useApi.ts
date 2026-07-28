@@ -104,6 +104,7 @@ export function useClient(id: string) {
 
 interface UseCreateClientOptions {
   onSuccess?: () => void;
+  onError?: (error: string) => void;
 }
 
 export function useCreateClient(options?: UseCreateClientOptions) {
@@ -124,6 +125,7 @@ export function useCreateClient(options?: UseCreateClientOptions) {
 
 interface UseUpdateClientOptions {
   onSuccess?: () => void;
+  onError?: (error: string) => void;
 }
 
 export function useUpdateClient(options?: UseUpdateClientOptions) {
@@ -139,6 +141,30 @@ export function useUpdateClient(options?: UseUpdateClientOptions) {
       queryClient.invalidateQueries({ queryKey: ['clients'] });
       queryClient.invalidateQueries({ queryKey: ['clients', id] });
       options?.onSuccess?.();
+    },
+  });
+}
+
+interface UseDeleteClientOptions {
+  onSuccess?: () => void;
+  onError?: (error: string) => void;
+}
+
+export function useDeleteClient(options?: UseDeleteClientOptions) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.deleteClient(id);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      options?.onSuccess?.();
+    },
+    onError: (error: Error) => {
+      options?.onError?.(error.message);
     },
   });
 }
@@ -185,6 +211,7 @@ export function useTemplate(id: string) {
 
 interface UseCreateTemplateOptions {
   onSuccess?: () => void;
+  onError?: (error: string) => void;
 }
 
 export function useCreateTemplate(options?: UseCreateTemplateOptions) {
@@ -199,6 +226,68 @@ export function useCreateTemplate(options?: UseCreateTemplateOptions) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['templates'] });
       options?.onSuccess?.();
+    },
+    onError: (error: Error) => {
+      options?.onError?.(error.message);
+    },
+  });
+}
+
+interface UseUpdateTemplateOptions {
+  onSuccess?: () => void;
+  onError?: (error: string) => void;
+}
+
+export function useUpdateTemplate(options?: UseUpdateTemplateOptions) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<CreateTemplateInput> }) => {
+      const response = await api.updateTemplate(id, data);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['templates'] });
+      queryClient.invalidateQueries({ queryKey: ['templates', id] });
+      options?.onSuccess?.();
+    },
+    onError: (error: Error) => {
+      options?.onError?.(error.message);
+    },
+  });
+}
+
+interface UseDeleteTemplateOptions {
+  onSuccess?: () => void;
+  // First arg is the error message; second is the list of campaigns the template is used in (when server returns 409).
+  onError?: (error: string, usedIn?: { id: string; name: string }[]) => void;
+}
+
+export function useDeleteTemplate(options?: UseDeleteTemplateOptions) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.deleteTemplate(id);
+      if (!response.success) {
+        // Server returns 409 with { data: { usedIn: [...] } } when template is referenced by a campaign.
+        const usedIn = (response.data as { usedIn?: { id: string; name: string }[] } | undefined)?.usedIn;
+        const err = new Error(response.error || 'Failed to delete template') as Error & {
+          usedIn?: { id: string; name: string }[];
+        };
+        if (usedIn && usedIn.length > 0) err.usedIn = usedIn;
+        throw err;
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['templates'] });
+      options?.onSuccess?.();
+    },
+    onError: (error: Error) => {
+      const usedIn = (error as Error & { usedIn?: { id: string; name: string }[] }).usedIn;
+      options?.onError?.(error.message, usedIn);
     },
   });
 }
@@ -238,6 +327,7 @@ export function useCampaign(id: string) {
 
 interface UseCreateCampaignOptions {
   onSuccess?: () => void;
+  onError?: (error: string) => void;
 }
 
 export function useCreateCampaign(options?: UseCreateCampaignOptions) {
@@ -252,6 +342,58 @@ export function useCreateCampaign(options?: UseCreateCampaignOptions) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
       options?.onSuccess?.();
+    },
+    onError: (error: Error) => {
+      options?.onError?.(error.message);
+    },
+  });
+}
+
+interface UseUpdateCampaignOptions {
+  onSuccess?: () => void;
+  onError?: (error: string) => void;
+}
+
+export function useUpdateCampaign(options?: UseUpdateCampaignOptions) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<CreateCampaignInput> & { status?: Campaign['status'] } }) => {
+      const response = await api.updateCampaign(id, data);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', id] });
+      options?.onSuccess?.();
+    },
+    onError: (error: Error) => {
+      options?.onError?.(error.message);
+    },
+  });
+}
+
+interface UseDeleteCampaignOptions {
+  onSuccess?: () => void;
+  onError?: (error: string) => void;
+}
+
+export function useDeleteCampaign(options?: UseDeleteCampaignOptions) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.deleteCampaign(id);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      options?.onSuccess?.();
+    },
+    onError: (error: Error) => {
+      options?.onError?.(error.message);
     },
   });
 }

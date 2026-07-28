@@ -33,6 +33,10 @@ export interface Client {
   phone: string;
   email: string | null;
   birthday: string | null;
+  // Date the client filed their tax return; populated by the (future)
+  // CSV import workflow. Used by the "Previous tax year active" Campaign
+  // audience mode. Read-only on this surface — no UI editor yet.
+  taxFiledDate: string | null;
   notes: string;
   optedOut: boolean;
   createdAt: string;
@@ -90,6 +94,15 @@ export interface CreateTemplateInput {
 
 export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'RUNNING' | 'COMPLETED' | 'CANCELLED';
 
+/**
+ * Audience resolution mode for a Campaign. Stored on `Campaign.audience`;
+ * resolved at send time, not at create time.
+ *   ALL               → all opted-in clients
+ *   PREV_YEAR_ACTIVE  → opted-in clients with taxFiledDate in the prior calendar year
+ *   MANUAL            → opted-in clients from manualRecipientIds
+ */
+export type AudienceType = 'ALL' | 'PREV_YEAR_ACTIVE' | 'MANUAL';
+
 export interface Campaign {
   id: string;
   name: string;
@@ -98,6 +111,8 @@ export interface Campaign {
   status: CampaignStatus;
   scheduleTime: string | null;
   recurrence: string | null;
+  audience: AudienceType;
+  manualRecipientIds: string[];
   createdAt: string;
   updatedAt: string;
   template?: {
@@ -123,7 +138,9 @@ export interface CreateCampaignInput {
   description?: string;
   templateId?: string;
   scheduleTime?: string;
-  recurrence?: 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  recurrence?: 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+  audience?: AudienceType;
+  manualRecipientIds?: string[];
 }
 
 // ===========================================

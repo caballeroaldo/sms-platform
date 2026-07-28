@@ -40,25 +40,31 @@ enum UserRole {
 // ===========================================
 
 model Client {
-  id        String   @id @default(cuid())
-  firstName String   @map("first_name")
-  lastName  String   @map("last_name")
-  phone     String   @unique  // E.164 format
-  email     String?
-  birthday  DateTime?
-  notes     String?
-  optedOut  Boolean  @default(false) @map("opted_out")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(cuid())
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  phone        String   @unique  // E.164 format
+  email        String?
+  birthday     DateTime?
+  // taxFiledDate: when the client filed their tax return (used to target
+  // "previous tax year active" campaigns via the Campaign.audience feature).
+  // Populated by the future CSV import; until then, this is null for all
+  // clients and the PREV_YEAR_ACTIVE audience resolver will return an empty set.
+  taxFiledDate DateTime? @map("tax_filed_date")
+  notes        String?
+  optedOut     Boolean  @default(false) @map("opted_out")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  consents       Consent[]
-  outboundMessages Message[] @relation("OutboundMessages")
-  inboundMessages InboundMessage[]
+  consents         Consent[]
+  outboundMessages Message[]     @relation("OutboundMessages")
+  inboundMessages  InboundMessage[]
 
   @@index([phone])
   @@index([optedOut])
   @@index([birthday])
+  @@index([taxFiledDate])
   @@map("clients")
 }
 
@@ -119,15 +125,21 @@ enum TemplateCategory {
 // ===========================================
 
 model Campaign {
-  id           String         @id @default(cuid())
-  name         String
-  description  String?
-  templateId   String?        @map("template_id")
-  status       CampaignStatus @default(DRAFT)
-  scheduleTime DateTime?      @map("schedule_time")
-  recurrence   RecurrenceType? @default(NONE)
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
+  id               String         @id @default(cuid())
+  name             String
+  description      String?
+  templateId       String?        @map("template_id")
+  status           CampaignStatus @default(DRAFT)
+  scheduleTime     DateTime?      @map("schedule_time")
+  recurrence       RecurrenceType? @default(NONE)
+  // Audience targeting — resolved at /send time, not at create time:
+  //   ALL               → all opted-in clients (current behavior)
+  //   PREV_YEAR_ACTIVE  → opted-in clients with taxFiledDate in the prior calendar year
+  //   MANUAL            → opted-in clients from manualRecipientIds (opted-out entries are dropped)
+  audience         AudienceType   @default(ALL)
+  manualRecipientIds String[]     @map("manual_recipient_ids")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
 
   // Relations
   template Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
@@ -135,6 +147,7 @@ model Campaign {
 
   @@index([status])
   @@index([scheduleTime])
+  @@index([audience])
   @@map("campaigns")
 }
 
@@ -152,6 +165,12 @@ enum RecurrenceType {
   WEEKLY
   MONTHLY
   YEARLY
+}
+
+enum AudienceType {
+  ALL
+  PREV_YEAR_ACTIVE
+  MANUAL
 }
 
 // ===========================================

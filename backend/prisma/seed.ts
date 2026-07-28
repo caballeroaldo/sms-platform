@@ -109,6 +109,7 @@ async function main() {
         phone: '+15551001001',
         email: 'john.doe@example.com',
         birthday: new Date('1990-05-15'),
+        taxFiledDate: new Date('2025-04-08'),
         notes: 'VIP customer',
       },
     }),
@@ -121,6 +122,7 @@ async function main() {
         phone: '+15551001002',
         email: 'jane.smith@example.com',
         birthday: new Date('1985-08-22'),
+        taxFiledDate: new Date('2025-03-15'),
       },
     }),
     prisma.client.upsert({

@@ -202,6 +202,7 @@ const mockApi = {
       phone: input.phone,
       email: input.email || null,
       birthday: input.birthday || null,
+      taxFiledDate: null,
       notes: input.notes || '',
       optedOut: false,
       createdAt: new Date().toISOString(),
@@ -218,6 +219,19 @@ const mockApi = {
     if (index === -1) return { success: false, error: 'Client not found' };
     mockState.clients[index] = { ...mockState.clients[index], ...data, updatedAt: new Date().toISOString() };
     return { success: true, data: mockState.clients[index] };
+  },
+
+  async deleteClient(id: string): Promise<ApiResponse<Client>> {
+    await simulateDelay();
+    const index = mockState.clients.findIndex(c => c.id === id);
+    if (index === -1) return { success: false, error: 'Client not found' };
+    // Soft delete - set optedOut to true for compliance
+    mockState.clients[index] = {
+      ...mockState.clients[index],
+      optedOut: true,
+      updatedAt: new Date().toISOString(),
+    };
+    return { success: true, data: mockState.clients[index], message: 'Client opted out successfully' };
   },
 
   // Templates
@@ -246,6 +260,43 @@ const mockApi = {
     };
     mockState.templates.push(newTemplate);
     return { success: true, data: newTemplate };
+  },
+
+  async updateTemplate(id: string, data: Partial<CreateTemplateInput>): Promise<ApiResponse<Template>> {
+    await simulateDelay();
+    const index = mockState.templates.findIndex(t => t.id === id);
+    if (index === -1) return { success: false, error: 'Template not found' };
+    if (data.name) {
+      const conflict = mockState.templates.find(
+        (t) => t.name === data.name && t.id !== id
+      );
+      if (conflict) return { success: false, error: 'Template name already exists' };
+    }
+    const updated: Template = {
+      ...mockState.templates[index],
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.category !== undefined && { category: data.category }),
+      ...(data.content !== undefined && { content: data.content }),
+      updatedAt: new Date().toISOString(),
+    };
+    mockState.templates[index] = updated;
+    return { success: true, data: updated };
+  },
+
+  async deleteTemplate(id: string): Promise<ApiResponse<Template | { usedIn: { id: string; name: string }[] }>> {
+    await simulateDelay();
+    const index = mockState.templates.findIndex(t => t.id === id);
+    if (index === -1) return { success: false, error: 'Template not found' };
+    const usedIn = (mockState as any).campaigns
+      ? (mockState as any).campaigns
+          .filter((c: any) => c.templateId === id)
+          .map((c: any) => ({ id: c.id, name: c.name }))
+      : [];
+    if (usedIn.length > 0) {
+      return { success: false, error: 'Template is used in campaigns', data: { usedIn } };
+    }
+    mockState.templates.splice(index, 1);
+    return { success: true, message: 'Template deleted' };
   },
 
   // Campaigns
@@ -285,6 +336,12 @@ const mockApi = {
 
   async createCampaign(input: CreateCampaignInput): Promise<ApiResponse<Campaign>> {
     await simulateDelay();
+    if (!input.name) return { success: false, error: 'Campaign name is required' };
+    const audience = input.audience ?? 'ALL';
+    const manualIds = audience === 'MANUAL' ? (input.manualRecipientIds ?? []) : [];
+    if (audience === 'MANUAL' && manualIds.length === 0) {
+      return { success: false, error: 'Manual audience requires at least one recipient' };
+    }
     const template = input.templateId ? mockState.templates.find(t => t.id === input.templateId) : undefined;
     const newCampaign: Campaign = {
       id: `camp-${Date.now()}`,
@@ -294,6 +351,8 @@ const mockApi = {
       status: input.scheduleTime ? 'SCHEDULED' : 'DRAFT',
       scheduleTime: input.scheduleTime || null,
       recurrence: input.recurrence || null,
+      audience,
+      manualRecipientIds: manualIds,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       template: template ? { id: template.id, name: template.name, category: template.category } : undefined,
@@ -301,6 +360,52 @@ const mockApi = {
     };
     mockState.campaigns.unshift(newCampaign);
     return { success: true, data: newCampaign };
+  },
+
+  async updateCampaign(id: string, data: Partial<CreateCampaignInput> & { status?: Campaign['status'] }): Promise<ApiResponse<Campaign>> {
+    await simulateDelay();
+    const index = mockState.campaigns.findIndex(c => c.id === id);
+    if (index === -1) return { success: false, error: 'Campaign not found' };
+    const existing = mockState.campaigns[index];
+    if (!['DRAFT', 'SCHEDULED'].includes(existing.status)) {
+      return { success: false, error: 'Cannot update a running or completed campaign' };
+    }
+    const nextAudience = (data.audience ?? existing.audience) as Campaign['audience'];
+    const nextManualIds = data.manualRecipientIds ?? existing.manualRecipientIds;
+    if (nextAudience === 'MANUAL' && nextManualIds.length === 0) {
+      return { success: false, error: 'Manual audience requires at least one recipient' };
+    }
+    let template = existing.template;
+    if (data.templateId !== undefined && data.templateId !== existing.templateId) {
+      const tpl = data.templateId ? mockState.templates.find(t => t.id === data.templateId) : undefined;
+      template = tpl ? { id: tpl.id, name: tpl.name, category: tpl.category } : undefined;
+    }
+    const updated: Campaign = {
+      ...existing,
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.description !== undefined && { description: data.description }),
+      ...(data.templateId !== undefined && { templateId: data.templateId || null }),
+      ...(data.scheduleTime !== undefined && { scheduleTime: data.scheduleTime || null }),
+      ...(data.recurrence !== undefined && { recurrence: data.recurrence || null }),
+      ...(data.status !== undefined ? { status: data.status } : (data.scheduleTime !== undefined ? { status: 'SCHEDULED' as const } : {})),
+      audience: nextAudience,
+      manualRecipientIds: data.manualRecipientIds ?? existing.manualRecipientIds ?? [],
+      template,
+      updatedAt: new Date().toISOString(),
+    };
+    mockState.campaigns[index] = updated;
+    return { success: true, data: updated };
+  },
+
+  async deleteCampaign(id: string): Promise<ApiResponse<Campaign>> {
+    await simulateDelay();
+    const index = mockState.campaigns.findIndex(c => c.id === id);
+    if (index === -1) return { success: false, error: 'Campaign not found' };
+    if (mockState.campaigns[index].status === 'RUNNING') {
+      return { success: false, error: 'Cancel the campaign first' };
+    }
+    const [removed] = mockState.campaigns.splice(index, 1);
+    return { success: true, data: removed, message: 'Campaign deleted' };
   },
 
   // Messages
@@ -417,6 +522,10 @@ export const api = USE_MOCK ? mockApi : {
     return apiFetch<Client>(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   },
 
+  async deleteClient(id: string) {
+    return apiFetch<Client>(`/clients/${id}`, { method: 'DELETE' });
+  },
+
   async getTemplates(params?: { category?: string }) {
     const query = new URLSearchParams();
     if (params?.category) query.set('category', params.category);
@@ -429,6 +538,14 @@ export const api = USE_MOCK ? mockApi : {
 
   async createTemplate(input: CreateTemplateInput) {
     return apiFetch<Template>('/templates', { method: 'POST', body: JSON.stringify(input) });
+  },
+
+  async updateTemplate(id: string, data: Partial<CreateTemplateInput>) {
+    return apiFetch<Template>(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+
+  async deleteTemplate(id: string) {
+    return apiFetch<Template | { usedIn?: { id: string; name: string }[] }>(`/templates/${id}`, { method: 'DELETE' });
   },
 
   async getCampaigns(params?: { page?: number; limit?: number; status?: string }) {
@@ -445,6 +562,14 @@ export const api = USE_MOCK ? mockApi : {
 
   async createCampaign(input: CreateCampaignInput) {
     return apiFetch<Campaign>('/campaigns', { method: 'POST', body: JSON.stringify(input) });
+  },
+
+  async updateCampaign(id: string, data: Partial<CreateCampaignInput> & { status?: Campaign['status'] }) {
+    return apiFetch<Campaign>(`/campaigns/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+
+  async deleteCampaign(id: string) {
+    return apiFetch<Campaign>(`/campaigns/${id}`, { method: 'DELETE' });
   },
 
   async getMessages(params?: { page?: number; limit?: number; status?: string; campaignId?: string; clientId?: string; search?: string; direction?: string }) {

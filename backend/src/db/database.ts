@@ -139,6 +139,85 @@ export const clients = {
     }
     return prisma.client.create({ data });
   },
+
+  update: async (id: string, data: { firstName?: string; lastName?: string; phone?: string; email?: string | null; birthday?: string | null; notes?: string }) => {
+    if (isMockMode) {
+      const client = mockDb.clients.get(id);
+      if (!client) return null;
+
+      // Merge update data
+      const updatedClient = {
+        ...client,
+        ...(data.firstName !== undefined && { firstName: data.firstName }),
+        ...(data.lastName !== undefined && { lastName: data.lastName }),
+        ...(data.phone !== undefined && { phone: data.phone }),
+        ...(data.email !== undefined && { email: data.email }),
+        ...(data.birthday !== undefined && { birthday: data.birthday ? new Date(data.birthday) : null }),
+        ...(data.notes !== undefined && { notes: data.notes }),
+        updatedAt: new Date(),
+      };
+
+      mockDb.clients.set(id, updatedClient);
+      return {
+        id: updatedClient.id,
+        firstName: updatedClient.firstName,
+        lastName: updatedClient.lastName,
+        phone: updatedClient.phone,
+        email: updatedClient.email,
+        birthday: updatedClient.birthday?.toISOString() || null,
+        notes: updatedClient.notes,
+        optedOut: updatedClient.optedOut,
+        createdAt: updatedClient.createdAt.toISOString(),
+        updatedAt: updatedClient.updatedAt.toISOString(),
+      };
+    }
+    return prisma.client.update({
+      where: { id },
+      data: {
+        ...(data.firstName !== undefined && { firstName: data.firstName }),
+        ...(data.lastName !== undefined && { lastName: data.lastName }),
+        ...(data.phone !== undefined && { phone: data.phone }),
+        ...(data.email !== undefined && { email: data.email }),
+        ...(data.birthday !== undefined && { birthday: data.birthday ? new Date(data.birthday) : null }),
+        ...(data.notes !== undefined && { notes: data.notes }),
+      },
+    });
+  },
+
+  delete: async (id: string) => {
+    if (isMockMode) {
+      const client = mockDb.clients.get(id);
+      if (!client) return null;
+
+      // Soft delete - set optedOut to true for compliance
+      const updatedClient = {
+        ...client,
+        optedOut: true,
+        updatedAt: new Date(),
+      };
+
+      mockDb.clients.set(id, updatedClient);
+      return {
+        id: updatedClient.id,
+        firstName: updatedClient.firstName,
+        lastName: updatedClient.lastName,
+        phone: updatedClient.phone,
+        email: updatedClient.email,
+        birthday: updatedClient.birthday?.toISOString() || null,
+        notes: updatedClient.notes,
+        optedOut: updatedClient.optedOut,
+        createdAt: updatedClient.createdAt.toISOString(),
+        updatedAt: updatedClient.updatedAt.toISOString(),
+      };
+    }
+    // Soft delete - for compliance, opt out the client instead of hard delete
+    return prisma.client.update({
+      where: { id },
+      data: {
+        optedOut: true,
+      },
+    });
+  },
 };
 
 // Message operations

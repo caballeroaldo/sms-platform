@@ -3,7 +3,7 @@
  * Shared TypeScript interfaces
  */
 
-import { UserRole, ConsentType, TemplateCategory, CampaignStatus, RecurrenceType, MessageStatus } from '@prisma/client';
+import { UserRole, ConsentType, TemplateCategory, CampaignStatus, RecurrenceType, MessageStatus, AudienceType } from '@prisma/client';
 
 // Extend Express Request to include user
 declare global {
@@ -98,6 +98,8 @@ export interface CreateCampaignInput {
   templateId?: string;
   scheduleTime?: Date;
   recurrence?: RecurrenceType;
+  audience?: AudienceType;
+  manualRecipientIds?: string[];
 }
 
 export interface UpdateCampaignInput extends Partial<CreateCampaignInput> {
@@ -134,4 +136,4 @@ export interface ScheduleMessageInput {
 // Export all enums for external use
 // ===========================================
 
-export { UserRole, ConsentType, TemplateCategory, CampaignStatus, RecurrenceType, MessageStatus };
+export { UserRole, ConsentType, TemplateCategory, CampaignStatus, RecurrenceType, MessageStatus, AudienceType };
