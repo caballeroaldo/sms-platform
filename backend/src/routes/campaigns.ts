@@ -11,6 +11,7 @@ import {
   resolveAudienceClientIds,
   emptyAudienceReason,
 } from '../utils/audience.js';
+import { queueMessage } from '../workers/messageWorker.js';
 
 const router = Router();
 
@@ -163,11 +164,35 @@ router.post('/:id/send', async (req: Request, res: Response) => {
     }
 
     const templateContent = campaign.template.content;
-    await prisma.message.createMany({ data: clients.map((c) => ({ clientId: c.id, campaignId: campaign.id, content: templateContent, status: 'PENDING' as const, scheduledAt: campaign.scheduleTime })) });
-    await prisma.campaign.update({ where: { id }, data: { status: 'RUNNING' } });
-    await prisma.auditLog.create({ data: { userId: req.user!.id, actor: req.user!.email, action: 'campaign_sent', details: JSON.stringify({ campaignId: id, recipientCount: clients.length, audience: campaign.audience }), ipAddress: req.ip } });
+    // Messages are created as QUEUED (not PENDING) because this route enqueues
+    // them directly for dispatch below. The scheduled-message poller only sweeps
+    // PENDING rows, so creating them QUEUED prevents the poller from double-
+    // dispatching. scheduledAt mirrors scheduleTime: NULL for an immediate
+    // (unscheduled/DRAFT) send, a future timestamp for a SCHEDULED send.
+    const created = await prisma.message.createManyAndReturn({
+      data: clients.map((c) => ({
+        clientId: c.id,
+        campaignId: campaign.id,
+        content: templateContent,
+        status: 'QUEUED' as const,
+        scheduledAt: campaign.scheduleTime ?? null,
+      })),
+    });
 
-    res.json({ success: true, data: { campaignId: id, recipientCount: clients.length } } as ApiResponse);
+    // Enqueue each message for delivery. scheduledFor is set only for a future
+    // SCHEDULED send; omitting it tells BullMQ to process immediately.
+    const phoneById = new Map(clients.map((c) => [c.id, c.phone]));
+    const scheduledFor = campaign.scheduleTime ? new Date(campaign.scheduleTime) : undefined;
+    await Promise.all(
+      created.map((m) =>
+        queueMessage(m.id, m.clientId, phoneById.get(m.clientId)!, m.content, campaign.id, scheduledFor)
+      )
+    );
+
+    await prisma.campaign.update({ where: { id }, data: { status: 'RUNNING' } });
+    await prisma.auditLog.create({ data: { userId: req.user!.id, actor: req.user!.email, action: 'campaign_sent', details: JSON.stringify({ campaignId: id, recipientCount: clients.length, queued: created.length, audience: campaign.audience }), ipAddress: req.ip } });
+
+    res.json({ success: true, data: { campaignId: id, recipientCount: clients.length, queued: created.length } } as ApiResponse);
   } catch (error) {
     console.error('Send campaign error:', error);
     res.status(500).json({ success: false, error: 'Failed to send campaign' } as ApiResponse);

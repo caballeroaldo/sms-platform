@@ -59,13 +59,15 @@ export function buildAudienceWhere(
  */
 export async function resolveAudienceClientIds(
   campaign: CampaignLike
-): Promise<Array<{ id: string }>> {
+): Promise<Array<{ id: string; phone: string }>> {
   // MANUAL with no recipients returns an empty set rather than scanning everyone.
   if (campaign.audience === 'MANUAL' && (campaign.manualRecipientIds ?? []).length === 0) {
     return [];
   }
   const where = buildAudienceWhere(campaign.audience, campaign.manualRecipientIds ?? []);
-  return prisma.client.findMany({ where, select: { id: true } });
+  // `phone` is included so the send route can enqueue each message via the
+  // BullMQ queue without re-querying the client.
+  return prisma.client.findMany({ where, select: { id: true, phone: true } });
 }
 
 /**

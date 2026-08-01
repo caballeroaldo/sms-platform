@@ -17,9 +17,13 @@ const connection = new Redis(config.redisUrl, {
   enableReadyCheck: false,
 });
 
-// Queue and Worker names
+// BullMQ queue name. The Queue produces to this name and the Worker consumes
+// from it — they MUST share one name. A BullMQ Worker's first constructor arg
+// is the name of the queue to consume (NOT a worker id); the Worker extends
+// QueueBase so its keys live under bull:<this name>:*. Using a separate
+// "worker name" here previously made the worker listen on an empty namespace
+// while jobs piled up unprocessed in the queue's namespace.
 const QUEUE_NAME = 'message-queue';
-const WORKER_NAME = 'message-worker';
 
 // ===========================================
 // JOB TYPES
@@ -45,7 +49,7 @@ export const messageQueue = new Queue<SendMessageJob>(QUEUE_NAME, { connection }
 // ===========================================
 
 const messageWorker = new Worker<SendMessageJob>(
-  WORKER_NAME,
+  QUEUE_NAME,
   async (job: Job<SendMessageJob>) => {
     const { messageId, clientId, phone, content, retryCount = 0 } = job.data;
 
@@ -208,12 +212,17 @@ export async function queueMessage(
 export async function processScheduledMessages(): Promise<void> {
   const now = new Date();
 
+  // OR-includes NULL so PENDING rows with no scheduledAt (i.e. an immediate
+  // send, or rows left PENDING by paths that don't stamp scheduledAt) are still
+  // eligible. SQL `NULL <= now` is false, so a bare `scheduledAt: { lte: now }`
+  // would silently exclude them — that was the immediate-send dispatch bug.
   const pendingMessages = await prisma.message.findMany({
     where: {
       status: 'PENDING',
-      scheduledAt: {
-        lte: now,
-      },
+      OR: [
+        { scheduledAt: { lte: now } },
+        { scheduledAt: null },
+      ],
     },
     include: {
       client: {

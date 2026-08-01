@@ -7,6 +7,10 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import config, { isMockMode } from './config/index.js';
 import routes from './routes/index.js';
+// Start the BullMQ worker + the scheduled-message poller. Required for SMS
+// dispatch: POST /campaigns/:id/send enqueues jobs here, and the poller sweeps
+// any PENDING messages left by other paths. Needs Redis (see docs/PROGRESS.md).
+import './workers/index.js';
 import { requestLogger, corsOptions } from './middleware/index.js';
 import { ApiResponse } from './types/index.js';
 
