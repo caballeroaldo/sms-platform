@@ -3,12 +3,13 @@
  * CRUD operations for clients
  */
 
-import { Router, Request, Response } from 'express';
+import express, { Router, Request, Response } from 'express';
 import { clients as db } from '../db/database.js';
 import { authenticate } from '../middleware/index.js';
 import type { CreateClientInput, ApiResponse } from '../types/index.js';
 import { normalizeToE164 } from '../utils/index.js';
 import { buildAudienceWhere } from '../utils/audience.js';
+import { parseCsvReport } from '../utils/csv.js';
 import { AudienceType } from '@prisma/client';
 import prisma from '../prisma/client.js';
 
@@ -133,6 +134,145 @@ router.get('/count', async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({ success: false, error: 'Failed to count clients' } as ApiResponse);
   }
 });
+
+/**
+ * POST /clients/import
+ * Bulk-import clients from a periodic tax-season CSV report (see utils/csv.ts
+ * for the expected envelope + column mapping). The same file shape is uploaded
+ * repeatedly throughout a season, so the route is idempotent on phone:
+ *
+ *   - New phone  → create the client (identity + tax fields).
+ *   - Known phone → refresh ONLY the tax-season fields (taxFiledDate,
+ *                  taxReturnType, taxpayerStatus, inactive, clientLY,
+ *                  clientNew). Identity (name/phone/email/birthday/notes) and
+ *                  the legal optedOut flag are never overwritten by an import.
+ *   - Malformed/identity-missing rows from the parser → reported in `skipped`
+ *                  with a reason; they never reach the DB.
+ *
+ * Body is the raw CSV text (Content-Type: text/csv or text/plain). We use a
+ * route-scoped express.text() parser — the global json() body parser next()s
+ * past non-JSON payloads and leaves the stream untouched. No multipart/file
+ * upload handling (no multer dep); the frontend reads the File via file.text().
+ *
+ * Mounted BEFORE the /:id routes so "/import" isn't captured by "/:id".
+ */
+router.post(
+  '/import',
+  authenticate,
+  express.text({ type: ['text/csv', 'text/plain'], limit: '10mb' }),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const body = req.body;
+      if (!body || typeof body !== 'string' || body.trim() === '') {
+        res.status(400).json({ success: false, error: 'Request body must be a non-empty CSV string' } as ApiResponse);
+        return;
+      }
+
+      const parsed = parseCsvReport(body);
+
+      let created = 0;
+      let existing = 0;
+      const errors: { lineNumber: number; reason: string; phone?: string }[] = [];
+
+      for (const row of parsed.rows) {
+        try {
+          const found = await prisma.client.findUnique({ where: { phone: row.phone } });
+          if (found) {
+            // Refresh only the tax-season fields. Identity + optedOut are
+            // owned by the operator, not by the periodic tax report.
+            await prisma.client.update({
+              where: { id: found.id },
+              data: {
+                taxFiledDate: row.taxFiledDate,
+                taxReturnType: row.taxReturnType,
+                taxpayerStatus: row.taxpayerStatus,
+                inactive: row.inactive,
+                clientLY: row.clientLY,
+                clientNew: row.clientNew,
+              },
+            });
+            existing++;
+          } else {
+            await prisma.client.create({
+              data: {
+                firstName: row.firstName,
+                lastName: row.lastName,
+                phone: row.phone,
+                birthday: row.birthday,
+                taxFiledDate: row.taxFiledDate,
+                taxReturnType: row.taxReturnType,
+                taxpayerStatus: row.taxpayerStatus,
+                inactive: row.inactive,
+                clientLY: row.clientLY,
+                clientNew: row.clientNew,
+              },
+            });
+            created++;
+          }
+        } catch (err) {
+          // P2002 = unique-constraint violation. The CSV could carry a
+          // duplicate phone within the same file (two rows, same number) — the
+          // first creates, the second loses the findUnique race and throws
+          // P2002. Treat as "already known" rather than an error.
+          if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'P2002') {
+            existing++;
+            continue;
+          }
+          errors.push({
+            lineNumber: row.lineNumber,
+            reason: err instanceof Error ? err.message : 'Failed to upsert row',
+            phone: row.phone,
+          });
+        }
+      }
+
+      // Surface parser-level skips too, so the operator sees every dropped row.
+      const skipped = parsed.skipped.map((s) => ({
+        lineNumber: s.lineNumber,
+        reason: s.reason,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        phone: s.phone,
+      }));
+
+      // Pass details as a plain object (NOT JSON.stringify) so Postgres stores
+      // a proper jsonb object — else the value is a double-encoded jsonb string
+      // and `details->>'created'` returns NULL. (Some older routes stringify;
+      // new code passes the object directly, matching the seed.)
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user!.id,
+          actor: req.user!.email,
+          action: 'clients_imported',
+          details: {
+            created,
+            existing,
+            skipped: skipped.length,
+            errors: errors.length,
+            totalRows: parsed.totalDataRows,
+            asOf: parsed.asOf,
+          },
+          ipAddress: req.ip,
+        },
+      });
+
+      res.json({
+        success: true,
+        data: {
+          created,
+          existing,
+          skipped,
+          errors,
+          totalRows: parsed.totalDataRows,
+          asOf: parsed.asOf,
+        },
+      } as ApiResponse);
+    } catch (error) {
+      console.error('Import clients error:', error);
+      res.status(500).json({ success: false, error: 'Failed to import clients' } as ApiResponse);
+    }
+  },
+);
 
 /**
  * GET /clients/:id

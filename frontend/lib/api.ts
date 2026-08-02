@@ -22,6 +22,7 @@ import type {
   SendCampaignResult,
   CountAudienceMode,
   ClientCountResult,
+  ImportClientsResult,
   ApiResponse,
 } from '@/lib/types';
 
@@ -206,6 +207,11 @@ const mockApi = {
       email: input.email || null,
       birthday: input.birthday || null,
       taxFiledDate: null,
+      taxReturnType: null,
+      taxpayerStatus: null,
+      inactive: false,
+      clientLY: false,
+      clientNew: false,
       notes: input.notes || '',
       optedOut: false,
       createdAt: new Date().toISOString(),
@@ -235,6 +241,24 @@ const mockApi = {
       updatedAt: new Date().toISOString(),
     };
     return { success: true, data: mockState.clients[index], message: 'Client opted out successfully' };
+  },
+
+  // Mock CSV import: don't parse the text — just report a plausible no-op
+  // summary so the UI flow can be exercised without a backend. Every row is
+  // treated as "existing" so mock imports never silently mutate the list.
+  async importClients(_csvText: string): Promise<ApiResponse<ImportClientsResult>> {
+    await simulateDelay();
+    return {
+      success: true,
+      data: {
+        created: 0,
+        existing: 0,
+        skipped: [],
+        errors: [],
+        totalRows: 0,
+        asOf: null,
+      },
+    };
   },
 
   // Templates
@@ -614,6 +638,16 @@ export const api = USE_MOCK ? mockApi : {
 
   async deleteClient(id: string) {
     return apiFetch<Client>(`/clients/${id}`, { method: 'DELETE' });
+  },
+
+  // CSV import. Body is raw CSV text (Content-Type: text/csv), NOT JSON —
+  // so this can't use the JSON-defaulting apiFetch helper. Always returns JSON.
+  async importClients(csvText: string) {
+    return apiFetch<ImportClientsResult>('/clients/import', {
+      method: 'POST',
+      body: csvText,
+      headers: { 'Content-Type': 'text/csv' },
+    });
   },
 
   async getTemplates(params?: { category?: string }) {

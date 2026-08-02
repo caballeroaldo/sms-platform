@@ -33,10 +33,19 @@ export interface Client {
   phone: string;
   email: string | null;
   birthday: string | null;
-  // Date the client filed their tax return; populated by the (future)
-  // CSV import workflow. Used by the "Previous tax year active" Campaign
-  // audience mode. Read-only on this surface — no UI editor yet.
+  // Tax-season context, populated by the periodic CSV import (POST
+  // /clients/import). Identity fields (name/phone/email/birthday/notes) are
+  // never overwritten by an import; these tax fields refresh on every upload.
+  //   taxFiledDate   — "Date Changed"; the date the client came in to file.
+  //                     Drives the PREV_YEAR_ACTIVE Campaign audience.
+  //   inactive       — carried over / not seen this season. NOT optedOut
+  //                     (which is revoked SMS consent, a legal flag).
   taxFiledDate: string | null;
+  taxReturnType: string | null;
+  taxpayerStatus: string | null;
+  inactive: boolean;
+  clientLY: boolean;
+  clientNew: boolean;
   notes: string;
   optedOut: boolean;
   createdAt: string;
@@ -64,6 +73,40 @@ export interface CreateClientInput {
   email?: string;
   birthday?: string;
   notes?: string;
+}
+
+// ===========================================
+// CSV Import (POST /clients/import)
+// ===========================================
+
+/**
+ * Result of POST /clients/import. The route is idempotent on phone:
+ * new phones create, known phones refresh ONLY the tax-season fields, and
+ * rows the parser couldn't classify (missing identity / invalid phone) come
+ * back in `skipped` with a reason. `errors` are rows that reached the DB
+ * write but threw (e.g. a constraint violation that wasn't a P2002 dup).
+ */
+export interface ImportedSkippedRow {
+  lineNumber: number;
+  reason: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+}
+
+export interface ImportedErrorRow {
+  lineNumber: number;
+  reason: string;
+  phone?: string;
+}
+
+export interface ImportClientsResult {
+  created: number;
+  existing: number;
+  skipped: ImportedSkippedRow[];
+  errors: ImportedErrorRow[];
+  totalRows: number;
+  asOf: string | null;
 }
 
 // ===========================================

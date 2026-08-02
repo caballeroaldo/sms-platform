@@ -47,6 +47,15 @@ A full-stack SMS automation platform for a small business serving ~200 clients. 
 - [x] **Add Client** - Modal form with validation (firstName, phone required)
 - [x] **Edit Client** - Pre-populated form with update functionality
 - [x] **Delete Client** - Confirmation dialog with soft-delete (opt-out)
+- [x] **CSV Import** (`POST /clients/import`) — bulk-import the periodic tax-season
+  client-list report. Parser (`utils/csv.ts`) strips the envelope (title / "As of" /
+  Totals) by content, maps columns by name (not position), and classifies rows.
+  Route is idempotent on phone: new → create, known → refresh *only* the tax-season
+  fields (taxFiledDate, taxReturnType, taxpayerStatus, inactive, clientLY, clientNew);
+  identity (name/phone/email/birthday/notes) and the legal `optedOut` flag are never
+  overwritten by an import. Skipped/invalid rows surfaced with reasons. Frontend
+  "Import CSV" button (hidden file input, `file.text()` → raw CSV body) with a result
+  banner. **Verified at runtime (mock Twilio, 2026-08-01)** — see Recent Fixes.
 
 ### Templates
 - [x] Templates list page
@@ -149,6 +158,17 @@ A full-stack SMS automation platform for a small business serving ~200 clients. 
 ### Lower Priority
 - [ ] **Form-input styling consistency sweep beyond the 4 modal forms** — Other white-surface text inputs not covered by the Medium-Priority fix above should get the same `text-slate-700 placeholder:text-slate-400` + matching focus-ring treatment so the convention holds app-wide. Candidates to audit: login form inputs ([frontend/app/login/page.tsx](frontend/app/login/page.tsx)), the Messages compose modal ([frontend/app/messages/page.tsx](frontend/app/messages/page.tsx) compose section + any shared compose component), the Send Campaign modal ([frontend/lib/components/campaigns/SendCampaignModal.tsx](frontend/lib/components/campaigns/SendCampaignModal.tsx) confirmation checkbox), the AuthContext or any settings/audit-log pages once built, and the search inputs on remaining list-page headers (templates / campaigns / messages) for parity with the Messages + Clients search inputs. Carry-forward rule: a control's checked-accent should match its filled-text token (`text-slate-700` for inputs/checkboxes/radios) unless a colored accent is intentionally called for by the surrounding CTA.
 - [ ] **Fix `jsonwebtoken@9` overload errors in [backend/src/routes/auth.ts](backend/src/routes/auth.ts)** (lines 87, 132, 178, 213). Replace `Config.jwtExpiresIn: string` with a union that satisfies `jwt.SignOptions['expiresIn']` (`number | ms.StringValue | undefined`), or cast at the four call sites: `{ expiresIn: config.jwtExpiresIn as jwt.SignOptions['expiresIn'] }`. The env value `"604800"` is currently accepted at runtime; this is purely a type cleanup.
+- [ ] **Route `POST /messages/send-now` through the BullMQ worker (dispatch-path consistency)** — Currently this route calls `sendSMS()` **inline within the HTTP request** at [backend/src/routes/messages.ts:57](backend/src/routes/messages.ts#L57), bypassing the queue/worker entirely. The project actually has **three** message-dispatch paths, only two of which use the worker:
+
+  | route | dispatch mechanism | worker? |
+  |---|---|---|
+  | `POST /messages/send-now` | inline `sendSMS()` in the request handler | **No** |
+  | `POST /messages/schedule` | writes a `PENDING` + future `scheduledAt` row; the 60s poller (`processScheduledMessages`) sweeps and enqueues it | Yes, via poller → `queueMessage` |
+  | `POST /campaigns/:id/send` | enqueues directly to BullMQ as `QUEUED` (the path fixed + runtime-verified in Recent Fixes #17) | Yes, directly |
+
+  The inline `send-now` path loses every benefit the worker exists to provide: **no automatic retry** (a thrown error surfaces as a plain per-recipient error in the response, message effectively lost), **no rate limiting** (a large `clientIds` array calls Twilio as fast as the loop resolves — could exceed per-number throughput and trip carrier throttling), **no durability** (a crash mid-loop loses the unsent remainder), and **no decoupling** (the HTTP request blocks until every Twilio call finishes). The campaign path was specifically refactored to avoid exactly this — see [Recent Fixes #17](#recent-fixes-chronological).
+
+  **Recommended fix:** make `send-now` create the `Message` row(s) as `QUEUED` (not `PENDING`) with `scheduledAt: null`, then call the existing `queueMessage()` helper from [backend/src/workers/messageWorker.ts](backend/src/workers/messageWorker.ts) with `scheduledFor = undefined` — the same pattern the campaign send route uses (Immediate-send path verified in #17). This unifies all three paths on the worker for immediate sends and deletes the inline `sendSMS` call from the route; the poller continues to own the `POST /messages/schedule` path. Optionally keep an inline fast-path only for the single-recipient case if latency matters, but simplest + safest is to always enqueue. **Not blocking** today — `send-now` works and stays mock unless real Twilio creds are set — but it should be unified before live SMS is enabled so the worker's rate limiting protects real carrier throughput. Discovered while explaining the Redis/BullMQ architecture (2026-08-01).
 - [ ] CSV import for clients
 - [ ] Bulk message sending
 - [ ] Template variable preview
@@ -309,6 +329,15 @@ sms-platform/
    - **Verified at runtime — scheduled-send (mock Twilio, 2026-08-01):** a `SCHEDULED` campaign with `scheduleTime` ~2 min in the future (same audience/template) → `POST /:id/send` returned `queued: 1` → message created `QUEUED` with a **future** `scheduled_at` → job held in `bull:message-queue:delayed` (delayed=1, wait=0) by BullMQ's native `delay`, not handed to the worker → fired on cue at `scheduleTime` (`sent_at` = 08:46:27.084, within the same second as the scheduled time, not the enqueue time) → row flipped to `SENT` with a `SM_MOCK_*` sid masking the 08:46:27 instant. `delayed/wait/active/completed/failed` all returned to 0 (`removeOnComplete`). This exercises the `scheduledFor` branch of `queueMessage()` — the native-delay path the immediate test did not touch. Test artifacts cleaned, dev DB restored to baseline (DRAFT 1 / SCHEDULED 1 / COMPLETED 1).
    - **Ops note:** requires Redis. `brew install redis && brew services start redis` (the stock `/opt/homebrew/etc/redis.conf` had four broken `loadmodule` directives pointing at missing modules that aborted every launch — commented out).
 
+18. **CSV Import — bulk client ingest for the tax-season report** — Adds the periodic-upload feature flagged in earlier entries (#14, #15: "until the CSV flow ships, `PREV_YEAR_ACTIVE` returns an empty set"). The same report shape is re-uploaded throughout a season, so the route is **idempotent on phone**: new phones create; known phones refresh *only* the tax-season fields, never identity. No real SMS is involved (import never enqueues messages).
+   - **Schema** ([backend/prisma/schema.prisma](backend/prisma/schema.prisma)) — five new `Client` fields, applied via `prisma db push`: `taxFiledDate DateTime?` (indexed), `taxReturnType String?`, `taxpayerStatus String?`, `inactive Boolean`, `clientLY Boolean`, `clientNew Boolean`. Comment in-file records the semantics locked with the business owner: `inactive` ("Client Inactive") is **not** `optedOut` — `optedOut` is revoked SMS consent (a legal flag); `inactive` means carried over / not seen this season. Identity fields (name/phone/email/birthday/notes/optedOut) are never overwritten by an import.
+   - **CSV parser** ([backend/src/utils/csv.ts](backend/src/utils/csv.ts) — new) — `parseCsvReport(text)` strips the report envelope (title line, "As of <date>" line, "Totals (N)" row) *by content, not line number*, so regenerated reports with different dates/counts still parse. Headers mapped by lowercased name, not position. One row = one client. Rows missing identity (firstName/phone) or with an unparseable phone land in `skipped` with a reason; they never reach the DB. `parseUSDate` (`MM/DD/YYYY` → UTC-midnight `Date`), `yesNoToBool`, and a hand-rolled RFC-4180-ish `splitCsv` (handles quoted fields / embedded commas / doubled-quote escapes — no new dep).
+   - **Import route** ([backend/src/routes/clients.ts](backend/src/routes/clients.ts)) — new `POST /clients/import`, mounted **before** `/:id` so `/import` isn't captured by the dynamic param. Accepts the raw CSV string (route-scoped `express.text({ type: ['text/csv','text/plain'], limit: '10mb' })` — no multer). Per-row `findUnique({where:{phone}})` → exists: `update` tax fields only → `existing++`; new: `create` identity + tax → `created++`; P2002 (dup phone within the same file, findUnique race) → `existing++` (treated as known, not error). Response: `{ created, existing, skipped[], errors[], totalRows, asOf }`. Writes a `clients_imported` audit row.
+   - **Frontend** — `Client` type + 5 new fields + `ImportClientsResult` ([frontend/lib/types/index.ts](frontend/lib/types/index.ts)); `importClients(csvText)` in both real and mock `api` (real posts `Content-Type: text/csv` raw body, overriding `apiFetch`'s JSON default; mock reports a no-op summary); `useImportClients` hook (reads `file.text()`, invalidates `['clients']` + `['dashboard']`, hands the summary to `onSuccess`); `Import CSV` button + hidden `<input type="file" accept=".csv">` + green result banner (created/updated/skipped/errors counts, collapsible skipped/error row lists) on [frontend/app/clients/page.tsx](frontend/app/clients/page.tsx). Mock data refreshed to the new shape.
+   - **Verified at runtime (mock Twilio, 2026-08-01):** imported the sanitized real sample (`Sample CSV Report for SMS Platform.csv`, 208 data rows) → `created: 1` (JOHN DOE +14081234567), `skipped: 207` (blank rows, reason "Unrecognized phone number"), `asOf: "08-01-2026"`; totals reconcile (1+207=208 = the report's "Totals (208)"). **Re-importing the same file → `existing: 1`, `created: 0`** — proves the duplicate-avoidance the business owner asked for. A 3-row synthetic fixture with distinct statuses (EF Accepted / Updated From 2024 / New Client) confirmed flag mapping (`MM/DD/YYYY`→date, blank Date Changed→NULL `tax_filed_date`, `Yes/No`→bool), and re-importing the same phones with a **changed first name** confirmed identity is preserved while tax fields refreshed — `Alice_identity_preserved=true`, `tax_filed_date` v1→v2 (2026-01-10→2026-02-20), `taxpayer_status` refreshed, `inactive` refreshed. Audit `clients_imported` `details` written. Test rows + 5 audit rows deleted, dev DB restored to baseline.
+   - **Concurrent fix:** the import route passes audit `details` as a plain object (not `JSON.stringify`) so Postgres stores a proper jsonb object — `details->>'created'` is queryable. The older `JSON.stringify` convention in `routes/campaigns.ts` double-encodes `details` as a jsonb string (pre-existing, noted here; left untouched).
+   - **Stubbed:** mock `importClients` returns a no-op summary (doesn't parse) — mock mode can exercise the UI flow without a backend but won't reflect real counts.
+
 ---
 
 ## Stack-Rank Notes
@@ -350,7 +379,7 @@ The frontend currently connects to the real backend (NEXT_PUBLIC_USE_MOCK=false)
 
 ---
 
-*Last Updated: July 28, 2026*
+*Last Updated: August 1, 2026*
 
 ## Project Structure
 

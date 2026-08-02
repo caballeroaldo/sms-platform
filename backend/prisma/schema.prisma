@@ -46,13 +46,26 @@ model Client {
   phone        String   @unique  // E.164 format
   email        String?
   birthday     DateTime?
-  // taxFiledDate: when the client filed their tax return (used to target
-  // "previous tax year active" campaigns via the Campaign.audience feature).
-  // Populated by the future CSV import; until then, this is null for all
-  // clients and the PREV_YEAR_ACTIVE audience resolver will return an empty set.
-  taxFiledDate DateTime? @map("tax_filed_date")
-  notes        String?
-  optedOut     Boolean  @default(false) @map("opted_out")
+  // Tax-season fields, populated by the periodic CSV import (POST /clients/import).
+  //   taxFiledDate  — "Date Changed" from the CSV; the date the client came in to
+  //                   file. Null for carryover ("Updated From 2024", no Date
+  //                   Changed) rows. Drives the PREV_YEAR_ACTIVE audience.
+  //   taxReturnType — "Return Type" (1040, 1040SR, 1120S, 1065, …).
+  //   taxpayerStatus— "Taxpayer Status" (EF Accepted | EF Ext Accepted |
+  //                   In Progress | Updated From 2024 | New Client).
+  // These refresh on every import (see import route); identity fields
+  // (name/phone/email/birthday) are never overwritten by an import.
+  taxFiledDate   DateTime? @map("tax_filed_date")
+  taxReturnType  String?  @map("tax_return_type")
+  taxpayerStatus String?  @map("taxpayer_status")
+  // Season context flags from the CSV. `inactive` ("Client Inactive") is NOT
+  // opted-out: optedOut means revoked SMS consent (a legal flag), inactive
+  // means the client was carried over and not seen this season.
+  inactive       Boolean  @default(false)
+  clientLY       Boolean  @default(false) @map("client_ly")  // seen prior year
+  clientNew      Boolean  @default(false) @map("client_new")  // new this year
+  notes          String?
+  optedOut       Boolean  @default(false) @map("opted_out")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

@@ -18,6 +18,7 @@ import type {
   SendCampaignResult,
   ClientCountResult,
   CountAudienceMode,
+  ImportClientsResult,
 } from '@/lib/types';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useState, useEffect } from 'react';
@@ -165,6 +166,40 @@ export function useDeleteClient(options?: UseDeleteClientOptions) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] });
       options?.onSuccess?.();
+    },
+    onError: (error: Error) => {
+      options?.onError?.(error.message);
+    },
+  });
+}
+
+interface UseImportClientsOptions {
+  onSuccess?: (result: ImportClientsResult) => void;
+  onError?: (error: string) => void;
+}
+
+/**
+ * POST /clients/import — bulk-import a periodic tax-season CSV report. The
+ * mutationFn reads the File to text (file.text()) and posts the raw CSV string
+ * with Content-Type text/csv. On success it invalidates the clients list AND
+ * the dashboard (import changes client counts / audience sizes), then hands
+ * the summary {created, existing, skipped, errors, ...} to onSuccess so the
+ * page can surface a result banner.
+ */
+export function useImportClients(options?: UseImportClientsOptions) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const csvText = await file.text();
+      const response = await api.importClients(csvText);
+      if (!response.success) throw new Error(response.error || 'Failed to import CSV');
+      return response.data as ImportClientsResult;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      options?.onSuccess?.(result);
     },
     onError: (error: Error) => {
       options?.onError?.(error.message);

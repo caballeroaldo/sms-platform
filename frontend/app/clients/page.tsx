@@ -5,15 +5,15 @@
  * List and manage SMS clients
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Link from 'next/link';
-import { useClients, useDebounce, useCreateClient, useUpdateClient, useDeleteClient } from '@/lib/hooks/useApi';
+import { useClients, useDebounce, useCreateClient, useUpdateClient, useDeleteClient, useImportClients } from '@/lib/hooks/useApi';
 import { LoadingScreen, StatusBadge } from '@/lib/components/ui';
 import { useRequireAuth } from '@/lib/components/ProtectedRoute';
 import { Modal } from '@/lib/components/Modal';
 import { ClientForm } from '@/lib/components/ClientForm';
 import { ConfirmDialog } from '@/lib/components/ConfirmDialog';
-import type { Client, CreateClientInput } from '@/lib/types';
+import type { Client, CreateClientInput, ImportClientsResult } from '@/lib/types';
 
 export default function ClientsPage() {
   // Protect this route - redirect to login if not authenticated
@@ -29,6 +29,11 @@ export default function ClientsPage() {
   const [deleteClientId, setDeleteClientId] = useState<string | null>(null);
   const [deleteClientName, setDeleteClientName] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<ImportClientsResult | null>(null);
+
+  // Hidden file input — the "Import CSV" button proxies the click so we don't
+  // need a styled native file picker in the header.
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Debounce search to avoid excessive API calls (300ms delay)
   const debouncedSearch = useDebounce(search, 300);
@@ -69,6 +74,16 @@ export default function ClientsPage() {
     },
     onError: (error) => {
       setErrorMessage(error || 'Failed to delete client');
+    },
+  });
+
+  const importClients = useImportClients({
+    onSuccess: (result) => {
+      setImportResult(result);
+      setErrorMessage(null);
+    },
+    onError: (error) => {
+      setErrorMessage(error || 'Failed to import CSV');
     },
   });
 
@@ -114,6 +129,21 @@ export default function ClientsPage() {
     setDeleteClientName('');
   };
 
+  const handleImportClick = () => {
+    setImportResult(null);
+    setErrorMessage(null);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset the input value so selecting the SAME file twice fires onChange
+    // again (otherwise the second pick is a no-op).
+    e.target.value = '';
+    if (!file) return;
+    importClients.mutate(file);
+  };
+
   // Log error for debugging
   if (error) {
     console.error('Clients fetch error:', error);
@@ -127,15 +157,37 @@ export default function ClientsPage() {
           <h1 className="text-2xl font-bold text-white">Clients</h1>
           <p className="text-slate-300 mt-1">Manage your SMS recipients and contacts</p>
         </div>
-        <button
-          onClick={handleAddClick}
-          className="bg-cyan-600 text-white px-3 py-1.5 rounded-lg hover:bg-cyan-700 transition-colors flex items-center gap-1"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add Client
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleFileSelected}
+            className="hidden"
+            aria-hidden="true"
+            tabIndex={-1}
+          />
+          <button
+            onClick={handleImportClick}
+            disabled={importClients.isPending}
+            className="bg-slate-700 text-white px-3 py-1.5 rounded-lg hover:bg-slate-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Import clients from a CSV report"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            {importClients.isPending ? 'Importing…' : 'Import CSV'}
+          </button>
+          <button
+            onClick={handleAddClick}
+            className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add Client
+          </button>
+        </div>
       </div>
 
       {/* Error Banner */}
@@ -146,6 +198,75 @@ export default function ClientsPage() {
             <button
               onClick={() => setErrorMessage(null)}
               className="text-red-600 hover:text-red-800"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Import Result Banner */}
+      {importResult && (
+        <div className="bg-green-50 border border-green-200 text-green-800 rounded-lg p-4 mb-4">
+          <div className="flex justify-between items-start gap-4">
+            <div className="text-sm space-y-1 flex-1">
+              <p className="font-semibold">
+                Import complete{importResult.asOf ? ` (report as of ${importResult.asOf})` : ''}
+              </p>
+              <p>
+                Created <span className="font-medium">{importResult.created}</span>
+                {' · '}
+                Updated <span className="font-medium">{importResult.existing}</span>
+                {' · '}
+                Skipped <span className="font-medium">{importResult.skipped.length}</span>
+                {importResult.errors.length > 0 && (
+                  <>
+                    {' · '}
+                    Errors <span className="font-medium text-red-700">{importResult.errors.length}</span>
+                  </>
+                )}
+                {' · '}
+                {importResult.totalRows} rows read
+              </p>
+              {importResult.skipped.length > 0 && (
+                <details className="text-xs text-slate-600">
+                  <summary className="cursor-pointer hover:text-slate-800">
+                    View {importResult.skipped.length} skipped row{importResult.skipped.length === 1 ? '' : 's'}
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 ml-2">
+                    {importResult.skipped.slice(0, 50).map((s) => (
+                      <li key={s.lineNumber}>
+                        Line {s.lineNumber}
+                        {s.firstName || s.lastName || s.phone ? ` — ${[s.firstName, s.lastName].filter(Boolean).join(' ')}${s.phone ? ` (${s.phone})` : ''}` : ''}
+                        : {s.reason}
+                      </li>
+                    ))}
+                    {importResult.skipped.length > 50 && (
+                      <li className="italic">…and {importResult.skipped.length - 50} more</li>
+                    )}
+                  </ul>
+                </details>
+              )}
+              {importResult.errors.length > 0 && (
+                <details className="text-xs text-red-700">
+                  <summary className="cursor-pointer hover:text-red-900">
+                    View {importResult.errors.length} error{importResult.errors.length === 1 ? '' : 's'}
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 ml-2">
+                    {importResult.errors.map((e) => (
+                      <li key={e.lineNumber}>
+                        Line {e.lineNumber}{e.phone ? ` (${e.phone})` : ''}: {e.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+            <button
+              onClick={() => setImportResult(null)}
+              className="text-green-700 hover:text-green-900 shrink-0"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
