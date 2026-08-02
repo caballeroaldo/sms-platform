@@ -178,8 +178,12 @@ A full-stack SMS automation platform for a small business serving ~200 clients. 
 
 ### Testing
 - [ ] Backend unit tests
-- [ ] Backend integration tests
-- [ ] Frontend component tests
+- [ ] Backend integration tests — **in progress (2026-08-02; see Recent Fixes #19).** Harness is live: Vitest 4 + supertest, `backend/vitest.config.ts` (node env, 20s timeouts), `backend/tests/setup.ts` (`authHeader()` mints a seeded-admin Bearer; `app` is imported from the extracted app factory `src/app.ts` so tests drive routes via supertest without spawning the BullMQ worker or binding a port). Two green, self-cleaning suites (each `afterAll` removes every row the suite touched; dev DB left spotless, 0 orphans verified):
+  - `backend/tests/clients.import.test.ts` (5) — `POST /clients/import`: create-new + skipped + asOf; idempotent re-import; tax-field refresh preserves identity (direct DB); 400 empty; 401 unauth.
+  - `backend/tests/clients.crud.test.ts` (10) — `PUT`/`DELETE /clients/:id`: identity/notes update + tax-field-preservation (direct DB); 404; phone-change E.164 normalization; reserved NPA `555`→400; phone owned by another→409; soft opt-out (row survives) + 200; 400 already-opted-out; 401 unauth.
+  - **Run:** `cd backend && npm test` → 2 files / 15 tests / green ~1s. **Uncommitted** (per user request): `src/app.ts`, `tests/`, `vitest.config.ts`, `package.json` devDeps, slimmed `src/index.ts`.
+  - **Remaining backend:** `GET /clients/count` audience parity (import `buildAudienceWhere`, compare to direct count); `POST /clients` duplicate-409 + E.164; `POST /campaigns` audience validation + MANUAL-≥1 guard; `POST /campaigns/:id/send` (mock Twilio, Redis up: status validation, audience resolution, QUEUED rows, BullMQ enqueue, no real SMS).
+- [ ] Frontend component tests — extend the existing Jest 30 + ts-jest + Testing Library setup (`frontend/tests/`: `mockData.test.ts`, `components.test.tsx`, `api.test.ts`) with component integration tests (CSV import dialog + result banner, audience preview, campaign send modal).
 - [ ] E2E tests with Playwright
 
 ### DevOps
@@ -338,6 +342,14 @@ sms-platform/
    - **Concurrent fix:** the import route passes audit `details` as a plain object (not `JSON.stringify`) so Postgres stores a proper jsonb object — `details->>'created'` is queryable. The older `JSON.stringify` convention in `routes/campaigns.ts` double-encodes `details` as a jsonb string (pre-existing, noted here; left untouched).
    - **Stubbed:** mock `importClients` returns a no-op summary (doesn't parse) — mock mode can exercise the UI flow without a backend but won't reflect real counts.
 
+19. **Backend integration-test harness + first two green suites** — Lays the testing foundation and the first coverage. No source-route behavior changed (one structural extraction for testability); everything runs in mock Twilio (import/CRUD never enqueue or send).
+   - **App factory extraction** ([backend/src/app.ts](backend/src/app.ts) — new) — the Express app (middleware + routes + health + error handlers) split out of `src/index.ts` so tests import the app *without* `import './workers/index.js'` (BullMQ worker + 60s poller) or `app.listen()` (port bind). `src/index.ts` is now slim: imports `app` from `./app.js`, keeps the worker import + banner + listen, re-exports app. Tests drive routes via supertest against the real app, never binding a port or racing the worker.
+   - **Harness** — Vitest 4 + supertest (`backend/vitest.config.ts`, `backend/tests/setup.ts`). `setup.ts` exports `request` (supertest), `app` (from `src/app.ts`), and `authHeader()` (POSTs `/api/auth/login` as the seeded admin → Bearer header). `node` env, 20s test/hook timeouts. devDeps `vitest` + `supertest` added to `backend/package.json`.
+   - **`tests/clients.import.test.ts` (5, green)** — ordered suite on a single phone (`+14089990001`, valid NPA 408 — `normalizeToE164` rejects reserved 555, which the seed bypasses by inserting raw E.164). create-new + skipped-row report + asOf capture; idempotent re-import (existing=1, created=0); tax-field refresh preserves identity (direct DB: first name NOT clobbered, `taxFiledDate`/`taxReturnType`/`taxpayerStatus` refreshed); 400 empty body; 401 unauth. `afterAll` deletes the test client + the `clients_imported` audit rows by a distinctive `asOf` marker.
+   - **`tests/clients.crud.test.ts` (10, green)** — `PUT`/`DELETE /clients/:id` on a shared phone block (`+1415999*`, valid NPA 415, disjoint from the seed and import blocks). PUT: identity/notes update + 200 with a tax-field-preservation DB assertion (symmetric to import's identity-preservation); 404 unknown; phone-change E.164 normalization (bare `41599900NN`→`+1415999…`); reserved NPA `555`→400 with row untouched; phone owned by another client→409. DELETE: soft opt-out (`optedOut=true`, row survives — confirmed `db.delete` is a soft opt-out, so the `400 "already opted out"` guard is reachable); 404 unknown; 400 already-opted-out; 401 unauth. `afterAll` hard-deletes the whole phone block (catches soft-opted-out rows too). These routes write no audit rows — nothing else to clean.
+   - **Verified:** `cd backend && npm test` → 2 files / 15 tests / green ~1s; post-run sweep: 0 orphaned rows in either phone block. Test-discovered bug: the first run used NPA `555` (`+15559990001`), which `normalizeToE164` rejects — switched the fixtures to valid NPAs `408`/`415` (the import-route comment already warns about this).
+   - **Uncommitted** per user request: `src/app.ts`, `tests/`, `vitest.config.ts`, `backend/package.json` (devDeps), `src/index.ts` (slimmed).
+
 ---
 
 ## Stack-Rank Notes
@@ -363,7 +375,7 @@ sms-platform/
 3. MMS support implementation — Medium Priority, *after* number type is chosen.
 4. ~~Wire up the Send Campaign button~~ — **Done** in entry #15 above. The Send modal + audience preview are wired against `POST /campaigns/:id/send`. `PREV_YEAR_ACTIVE` will still resolve to an empty set until #5 ships CSV import.
 5. CSV import to populate `Client.taxFiledDate` — Lower Priority, but unblocks production `PREV_YEAR_ACTIVE` audiences and is the only remaining gap before the Campaigns Send button is fully useful end-to-end.
-6. **Testing**: write integration tests for the new `PUT /clients/:id` (E.164 + duplicate path), `DELETE /clients/:id` (already-opted-out path), the new `POST /campaigns` (audience validation + `MANUAL`-needs-≥1-recipient), `POST /campaigns/:id/send` (audience resolution + status flip + recipient creation), and `GET /clients/count` (audience parity) *while the contracts are fresh* — before more endpoints accumulate on top.
+6. **Testing** — *in progress (2026-08-02; see Testing section + Recent Fixes #19).* Harness live (Vitest + supertest + `src/app.ts` app-factory extraction). **Done:** `PUT /clients/:id` (E.164 + duplicate-409 + tax-field preservation) and `DELETE /clients/:id` (soft-opt-out + already-opted-out) — 15 tests green across `clients.import` + `clients.crud`. **Remaining, while the contracts are fresh:** `GET /clients/count` (audience parity), `POST /clients` (duplicate-409 + E.164), `POST /campaigns` (audience validation + MANUAL-≥1 guard), `POST /campaigns/:id/send` (mock Twilio, Redis up: audience resolution + status flip + QUEUED creation + enqueue). Then frontend Jest component suites, then Playwright E2E.
 
 ## How to Continue
 
@@ -379,7 +391,7 @@ The frontend currently connects to the real backend (NEXT_PUBLIC_USE_MOCK=false)
 
 ---
 
-*Last Updated: August 1, 2026*
+*Last Updated: August 2, 2026*
 
 ## Project Structure
 
