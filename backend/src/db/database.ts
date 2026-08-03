@@ -137,7 +137,14 @@ export const clients = {
         updatedAt: client.updatedAt.toISOString(),
       };
     }
-    return prisma.client.create({ data });
+    // Coerce birthday via `new Date()` so a date-only "YYYY-MM-DD" (what
+    // <input type=date> sends — ClientForm.tsx) lands as a valid Prisma DateTime,
+    // matching db.update (below) and the mock branch. Prisma's DateTime scalar
+    // rejects a bare date-only string ("premature end of input") → 500, which mock
+    // mode masked (the mock coerces). See clients.create.test.ts + Known Issues.
+    return prisma.client.create({
+      data: { ...data, birthday: data.birthday ? new Date(data.birthday) : null },
+    });
   },
 
   update: async (id: string, data: { firstName?: string; lastName?: string; phone?: string; email?: string | null; birthday?: string | null; notes?: string }) => {

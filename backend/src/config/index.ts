@@ -6,6 +6,11 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+// `StringValue` (branded template-literal union from `ms`) is what
+// @types/jsonwebtoken@9 narrows SignOptions.expiresIn to. Importing it
+// type-only lets us type Config.jwtExpiresIn precisely; `ms` + `@types/ms`
+// ship transitively with jsonwebtoken, so this adds no runtime/bundle cost.
+import type { StringValue } from 'ms';
 
 // ESM compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -29,7 +34,10 @@ interface Config {
 
   // JWT
   jwtSecret: string;
-  jwtExpiresIn: string;
+  // ms-format duration string (e.g. "604800", "7d", "1h"). Typed as ms'
+  // branded StringValue so `jwt.sign(..., { expiresIn })` satisfies the
+  // @types/jsonwebtoken@9 overload (TS2769 at auth.ts:87/132/178/213).
+  jwtExpiresIn: StringValue;
 
   // Twilio
   twilioAccountSid: string;
@@ -63,8 +71,12 @@ export const config: Config = {
   redisUrl: optional('REDIS_URL', ''),
 
   jwtSecret: optional('JWT_SECRET', 'dev-secret-do-not-use-in-prod'),
-  // JWT expiration in seconds (e.g., 604800 = 7 days)
-  jwtExpiresIn: optional('JWT_EXPIRES_IN', '604800'),
+  // JWT expiration as an ms-format duration string (e.g., "604800" seconds =
+  // 7 days, or "7d", "1h"). Cast to StringValue: the env value is always an
+  // ms-duration by convention, and a malformed value is jsonwebtoken@9's job
+  // to reject at the first jwt.sign (fail-fast) — matches the strictness the
+  // @types/jsonwebtoken@9 overload encodes.
+  jwtExpiresIn: optional('JWT_EXPIRES_IN', '604800') as StringValue,
 
   // Twilio - use empty strings if not provided (enables mock mode for testing)
   twilioAccountSid: optional('TWILIO_ACCOUNT_SID', ''),

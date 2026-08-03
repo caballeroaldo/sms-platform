@@ -170,9 +170,9 @@ describe('POST /api/clients', () => {
         lastName: 'Payload',
         phone: bareFor(61),
         email: 'full.payload@example.com',
-        // Full ISO-8601 DateTime — what Prisma's DateTime scalar accepts and
-        // what db.create real-mode passes through today. See the it.todo below
-        // for the date-only (YYYY-MM-DD) bug the Add Client form hits.
+        // Full ISO-8601 DateTime. Both this shape and the date-only "YYYY-MM-DD"
+        // form (what <input type=date> sends) are now coerced by db.create real-
+        // mode; the date-only case is covered by its own regression test below.
         birthday: '1990-05-15T00:00:00.000Z',
         notes: 'Prefers morning appointments',
       });
@@ -195,17 +195,31 @@ describe('POST /api/clients', () => {
     expect(row!.optedOut).toBe(false);
   });
 
-  // KNOWN BUG (real mode only — mock coerces, so it never surfaced before the
-  // real-DB tests): the Add Client / Edit Client form renders birthday as an
-  // <input type="date">, whose value is a date-only "YYYY-MM-DD" string. Prisma's
-  // DateTime scalar rejects that with "premature end of input. Expected
-  // ISO-8601 DateTime" → the route throws → 500. db.update real-mode and mock
-  // create both coerce via `new Date(str)`, but db.create real-mode passes the
-  // raw string to Prisma. Fix: in db.create real-mode, coerce to
-  // `data.birthday ? new Date(data.birthday) : null` (one line, matches
-  // db.update + mock). When fixed, replace this it.todo with an asserting test
-  // that sends birthday: '1990-05-15' and expects 201 + a parsed Date row.
-  it.todo('accepts a date-only YYYY-MM-DD birthday (what <input type=date> sends) — currently 500s in real mode, see comment above');
+  // Regression for the db.create real-mode birthday-coercion gap (fixed in
+  // database.ts): db.create now coerces `birthday: data.birthday ? new
+  // Date(data.birthday) : null`, matching db.update + the mock branch. The Add
+  // Client / Edit Client form renders birthday as <input type=date>, whose
+  // value is a date-only "YYYY-MM-DD" string; Prisma's DateTime scalar rejects a
+  // bare date-only string ("premature end of input") → the route used to throw
+  // → 500. Sends exactly the date-only shape the form produces and expects 201.
+  it('accepts a date-only YYYY-MM-DD birthday (what <input type=date> sends) and stores it as a parsed DateTime', async () => {
+    const res = await request(app)
+      .post('/api/clients')
+      .set(await authHeader())
+      .send({ firstName: 'DateOnly', phone: bareFor(81), birthday: '1990-05-15' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.birthday).toBe('1990-05-15T00:00:00.000Z'); // serialized Date
+
+    // Direct DB — new Date('1990-05-15') is UTC midnight (ISO date-only → UTC);
+    // Prisma stores + round-trips it. Locks the coercion the old raw-string
+    // pass-through broke.
+    const row = await prisma.client.findUnique({ where: { phone: phoneFor(81) } });
+    expect(row).not.toBeNull();
+    expect(row!.birthday).not.toBeNull();
+    expect(row!.birthday!.toISOString()).toBe('1990-05-15T00:00:00.000Z');
+  });
 
 
   it('rejects an unauthenticated request with 401', async () => {
