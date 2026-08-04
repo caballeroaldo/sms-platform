@@ -27,7 +27,12 @@ interface User {
   updatedAt: Date;
 }
 
-interface Client {
+// Exported (matches the `export interface Message` precedent below) so its name
+// is available to the declaration emitted for db/database.ts's `clients` export,
+// which returns this shape from the mock `findByPhone` branch. Without the
+// export, tsc's declaration-emit phase errors TS4023/TS4082 ("cannot be named"
+// / "private name 'Client'") under tsconfig `declaration: true`.
+export interface Client {
   id: string;
   firstName: string;
   lastName: string;

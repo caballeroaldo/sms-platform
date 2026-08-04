@@ -108,7 +108,27 @@ export const clients = {
 
   findByPhone: async (phone: string) => {
     if (isMockMode) {
-      return Array.from(mockDb.clients.values()).find(c => c.phone === phone) || null;
+      // Serialize to ISO strings (matching findUnique above) so the mock
+      // single-record-by-phone shape matches the mock single-record-by-id
+      // shape — previously this returned the raw Client (Date-typed
+      // birthday/createdAt/updatedAt), the only clients.* method to do so.
+      // Both call sites (POST /:409, PUT phone-change:409) read only existence
+      // / .id, so serializing is safe. Real mode (below) is unchanged.
+      const client = Array.from(mockDb.clients.values()).find(c => c.phone === phone) || null;
+      if (!client) return null;
+      return {
+        id: client.id,
+        firstName: client.firstName,
+        lastName: client.lastName,
+        phone: client.phone,
+        email: client.email,
+        birthday: client.birthday?.toISOString() || null,
+        notes: client.notes,
+        optedOut: client.optedOut,
+        createdAt: client.createdAt.toISOString(),
+        updatedAt: client.updatedAt.toISOString(),
+        _count: { outboundMessages: 0, inboundMessages: 0 }
+      };
     }
     return prisma.client.findUnique({ where: { phone } });
   },
