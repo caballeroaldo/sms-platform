@@ -138,4 +138,39 @@ describe('API Client', () => {
       expect(response.data?.failed).toBe(0);
     });
   });
+
+  describe('Conversations (Mock)', () => {
+    it('getConversations returns {conversations, pagination} with with-message rows before zero-message (null-lastMessage) rows', async () => {
+      const response = await api.getConversations();
+      expect(response.success).toBe(true);
+      expect(Array.isArray(response.data?.conversations)).toBe(true);
+      expect(response.data?.pagination).toBeDefined();
+      expect(response.data?.pagination).toHaveProperty('page');
+      expect(response.data?.pagination).toHaveProperty('pages');
+
+      const convs = response.data?.conversations ?? [];
+      // cl-1 has messages → at least one non-null row; cl-5 has none → a null row.
+      expect(convs.some((c) => c.lastMessage !== null)).toBe(true);
+      expect(convs.some((c) => c.lastMessage === null)).toBe(true);
+
+      // Every with-message row must precede every zero-message row.
+      const firstNullIdx = convs.findIndex((c) => c.lastMessage === null);
+      const lastNonNullIdx = convs.map((c, i) => (c.lastMessage !== null ? i : -1)).filter((i) => i >= 0).pop();
+      expect(firstNullIdx).toBeGreaterThan(-1);
+      expect(lastNonNullIdx).toBeDefined();
+      expect(lastNonNullIdx!).toBeLessThan(firstNullIdx);
+    });
+
+    it("getClientMessages('cl-1') returns the merged thread with inbound rows tagged direction 'inbound'", async () => {
+      const response = await api.getClientMessages('cl-1');
+      expect(response.success).toBe(true);
+      expect(Array.isArray(response.data)).toBe(true);
+      const msgs = response.data ?? [];
+      expect(msgs.length).toBeGreaterThan(0);
+      // Every row carries a direction.
+      expect(msgs.every((m) => m.direction === 'outbound' || m.direction === 'inbound')).toBe(true);
+      // cl-1's mock thread includes inbound replies → at least one inbound row.
+      expect(msgs.some((m) => m.direction === 'inbound')).toBe(true);
+    });
+  });
 });

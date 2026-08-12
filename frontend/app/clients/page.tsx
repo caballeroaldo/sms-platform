@@ -336,9 +336,6 @@ export default function ClientsPage() {
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Messages
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -346,7 +343,7 @@ export default function ClientsPage() {
             <tbody className="divide-y divide-slate-200">
               {clients.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
                     No clients found
                   </td>
                 </tr>
@@ -380,19 +377,16 @@ export default function ClientsPage() {
                         size="sm"
                       />
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {client._count?.outboundMessages || 0} messages
-                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <Link
-                          href={`/clients/${client.id}/conversation`}
+                          href={`/messages?client=${client.id}`}
                           className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                           </svg>
-                          View Chat
+                          Message
                         </Link>
                         <button
                           onClick={() => handleEditClick(client)}

@@ -19,6 +19,8 @@ import type {
   ClientCountResult,
   CountAudienceMode,
   ImportClientsResult,
+  ConversationsResponse,
+  ConversationMessage,
 } from '@/lib/types';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useState, useEffect } from 'react';
@@ -464,6 +466,11 @@ export function useSendCampaign(options?: UseSendCampaignOptions) {
       queryClient.invalidateQueries({ queryKey: ['campaigns', id] });
       queryClient.invalidateQueries({ queryKey: ['messages'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      // Campaign send created outbound messages → inbox left-column recency +
+      // counts are now stale. Prefix-match refreshes every ['conversations',…]
+      // and the active ['conversation', clientId] thread subscribers.
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['conversation'] });
       options?.onSuccess?.(result);
     },
     onError: (error: Error) => {
@@ -577,10 +584,89 @@ export function useSendMessage(options?: UseSendMessageOptions) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
+      // A sent message changes recency + outbound counts in the inbox list and
+      // the active thread. Prefix-match refreshes all ['conversations',…] and
+      // ['conversation', clientId] subscribers.
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['conversation'] });
       options?.onSuccess?.();
     },
     onError: (error: Error) => {
       options?.onError?.(error.message);
+    },
+  });
+}
+
+// ===========================================
+// Conversation Hooks (inbox)
+// ===========================================
+
+interface UseConversationsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
+/**
+ * GET /messages/conversations — the inbox left-column aggregate: every client
+ * (with-message ones first by most-recent message, zero-message after) with a
+ * preview of the last message + outbound/inbound counts. Read-only, safe in
+ * real-Twilio mode.
+ *
+ * Polls every 12s so new inbound replies bubble to the top while the inbox is
+ * open (no WebSockets). Mirrors useMessages' retry policy (skip 401s).
+ */
+export function useConversations(params?: UseConversationsParams) {
+  const { isAuthenticated } = useAuth();
+
+  return useQuery({
+    queryKey: ['conversations', params?.page ?? 1, params?.limit ?? 50, params?.search ?? ''],
+    queryFn: async () => {
+      const response = await api.getConversations(params);
+      if (!response.success) throw new Error(response.error);
+      return response.data as ConversationsResponse;
+    },
+    enabled: !!isAuthenticated,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+    refetchInterval: 12_000,
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message.includes('401')) {
+        return false;
+      }
+      return failureCount < 2;
+    },
+  });
+}
+
+/**
+ * GET /messages/client/:clientId — the merged outbound+inbound thread for one
+ * client (the right pane of the inbox). Inbound rows are normalized to
+ * `content` + `type:'inbound'` by the backend so replies render as left bubbles.
+ *
+ * Polls every 12s so inbound replies appear without a manual refresh.
+ */
+export function useConversation(clientId: string) {
+  const { isAuthenticated } = useAuth();
+
+  return useQuery({
+    queryKey: ['conversation', clientId],
+    queryFn: async () => {
+      const response = await api.getClientMessages(clientId);
+      if (!response.success) throw new Error(response.error);
+      return response.data as ConversationMessage[];
+    },
+    enabled: !!clientId && !!isAuthenticated,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+    refetchInterval: 12_000,
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message.includes('401')) {
+        return false;
+      }
+      return failureCount < 2;
     },
   });
 }

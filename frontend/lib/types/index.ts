@@ -217,6 +217,46 @@ export interface Message {
   type?: 'outbound' | 'inbound';
 }
 
+/**
+ * Merged outbound+inbound thread row from GET /messages/client/:clientId.
+ * The backend normalizes inbound `body` → `content` and tags each row with
+ * `type` + `direction` so the conversation view renders replies on the left and
+ * outbound on the right. Inbound rows carry `status: null`.
+ */
+export interface ConversationMessage extends Message {
+  direction: 'outbound' | 'inbound';
+  /** Raw inbound body, kept alongside the normalized `content`. */
+  body?: string;
+}
+
+/** Per-client conversation summary row (GET /messages/conversations). */
+export interface ConversationListItem {
+  client: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    phone: string;
+    optedOut: boolean;
+  };
+  lastMessage: {
+    content: string;
+    direction: 'outbound' | 'inbound';
+    timestamp: string;
+  } | null;
+  outboundCount: number;
+  inboundCount: number;
+}
+
+export interface ConversationsResponse {
+  conversations: ConversationListItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+}
+
 // ===========================================
 // Dashboard Types
 // ===========================================

@@ -13,6 +13,9 @@ import type {
   CampaignListResponse,
   CreateCampaignInput,
   Message,
+  ConversationMessage,
+  ConversationListItem,
+  ConversationsResponse,
   DashboardStats,
   LoginInput,
   RegisterInput,
@@ -550,6 +553,90 @@ const mockApi = {
     };
   },
 
+  // Conversations (inbox left-column aggregate). mockMessages is a single array
+  // mixing outbound + inbound rows distinguished by `type` ('inbound' vs
+  // undefined/'outbound') — mirrors the backend's two-table merge.
+  async getConversations(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+  }): Promise<ApiResponse<ConversationsResponse>> {
+    await simulateDelay();
+    const page = params?.page || 1;
+    const limit = params?.limit || 50;
+
+    const dirOf = (m: Message): 'outbound' | 'inbound' => (m.type === 'inbound' ? 'inbound' : 'outbound');
+
+    const clients = filterClients(mockState.clients, { search: params?.search });
+
+    const lastByClient = new Map<string, { content: string; direction: 'outbound' | 'inbound'; timestamp: string }>();
+    const outCountByClient = new Map<string, number>();
+    const inCountByClient = new Map<string, number>();
+    for (const m of mockState.messages) {
+      const dir = dirOf(m);
+      if (dir === 'inbound') {
+        inCountByClient.set(m.clientId, (inCountByClient.get(m.clientId) ?? 0) + 1);
+      } else {
+        outCountByClient.set(m.clientId, (outCountByClient.get(m.clientId) ?? 0) + 1);
+      }
+      const prev = lastByClient.get(m.clientId);
+      if (!prev || new Date(m.createdAt).getTime() > new Date(prev.timestamp).getTime()) {
+        lastByClient.set(m.clientId, { content: m.content, direction: dir, timestamp: m.createdAt });
+      }
+    }
+
+    // With-message clients first (lastAt desc), zero-message after (createdAt desc).
+    const withMsg = clients
+      .filter((c) => lastByClient.has(c.id))
+      .sort((a, b) => new Date(lastByClient.get(b.id)!.timestamp).getTime() - new Date(lastByClient.get(a.id)!.timestamp).getTime());
+    const withoutMsg = clients
+      .filter((c) => !lastByClient.has(c.id))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const total = withMsg.length + withoutMsg.length;
+    const pages = Math.max(1, Math.ceil(total / limit));
+    const skip = (page - 1) * limit;
+
+    // Page-slice across the with/zero boundary (mirrors the backend route).
+    const takeWith = Math.min(limit, Math.max(0, withMsg.length - skip));
+    let items = withMsg.slice(skip, skip + takeWith);
+    if (items.length < limit) {
+      const zeroSkip = items.length > 0 ? 0 : Math.max(0, skip - withMsg.length);
+      const remaining = limit - items.length;
+      items = items.concat(withoutMsg.slice(zeroSkip, zeroSkip + remaining));
+    }
+
+    const conversations: ConversationListItem[] = items.map((c) => {
+      const last = lastByClient.get(c.id);
+      return {
+        client: { id: c.id, firstName: c.firstName, lastName: c.lastName, phone: c.phone, optedOut: c.optedOut },
+        lastMessage: last ? { content: last.content, direction: last.direction, timestamp: last.timestamp } : null,
+        outboundCount: outCountByClient.get(c.id) ?? 0,
+        inboundCount: inCountByClient.get(c.id) ?? 0,
+      };
+    });
+
+    return {
+      success: true,
+      data: { conversations, pagination: { page, limit, total, pages } },
+    };
+  },
+
+  // Per-client merged thread (GET /messages/client/:clientId). mockMessages
+  // already mixes outbound + inbound (tagged via `type`); surface each row's
+  // direction so the inbox renders inbound replies as left bubbles.
+  async getClientMessages(clientId: string): Promise<ApiResponse<ConversationMessage[]>> {
+    await simulateDelay();
+    const msgs = mockState.messages
+      .filter((m) => m.clientId === clientId)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .map((m) => {
+        const direction = (m.type === 'inbound' ? 'inbound' : 'outbound') as 'outbound' | 'inbound';
+        return { ...m, direction, type: direction };
+      });
+    return { success: true, data: msgs };
+  },
+
   async sendMessage(input: SendMessageInput): Promise<ApiResponse<SendMessageResult>> {
     await simulateDelay(800);
 
@@ -725,6 +812,20 @@ export const api = USE_MOCK ? mockApi : {
 
   async getDashboardStats() {
     return apiFetch<DashboardStats>('/dashboard/stats');
+  },
+
+  // Inbox left-column aggregate (GET /messages/conversations) — read-only.
+  async getConversations(params?: { page?: number; limit?: number; search?: string }) {
+    const query = new URLSearchParams();
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.search) query.set('search', params.search);
+    return apiFetch<ConversationsResponse>(`/messages/conversations?${query}`);
+  },
+
+  // Merged outbound+inbound thread for one client (GET /messages/client/:clientId).
+  async getClientMessages(clientId: string) {
+    return apiFetch<ConversationMessage[]>(`/messages/client/${encodeURIComponent(clientId)}`);
   },
 };
 
