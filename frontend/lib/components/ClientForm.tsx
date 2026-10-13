@@ -1,6 +1,11 @@
+// Fixed Maximum update depth exceeded error by:
+// 1. Moving validation function and default values outside component
+// 2. Removing circular dependency in useForm's resetOnChange callback
+// 3. Using separate useEffect to handle client prop changes
+// 4. Fixing FormEvent deprecation warning
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useForm } from '@/lib/hooks/useForm';
 import type { Client, CreateClientInput } from '@/lib/types';
 
@@ -11,59 +16,67 @@ interface ClientFormProps {
   isLoading?: boolean;
 }
 
+// Form validation function - moved outside to prevent recreation on every render
+const validateClientForm = (values: CreateClientInput) => {
+  const errors: Record<string, string> = {};
+
+  if (!values.firstName || !values.firstName.trim()) {
+    errors.firstName = 'First name is required';
+  }
+
+  if (!values.lastName || !values.lastName.trim()) {
+    errors.lastName = 'Last name is required';
+  }
+
+  if (!values.phone || !values.phone.trim()) {
+    errors.phone = 'Phone number is required';
+  } else if (!/^\+?[\d\s\-()]+$/.test(values.phone)) {
+    errors.phone = 'Invalid phone number format';
+  }
+
+  if (values.email && (!values.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email))) {
+    errors.email = 'Invalid email format';
+  }
+
+  return errors;
+};
+
+// Default values for the client form - moved outside to prevent recreating on every render
+const DEFAULT_CLIENT_VALUES: CreateClientInput = {
+  firstName: '',
+  lastName: '',
+  phone: '',
+  email: '',
+  birthday: '',
+  notes: '',
+};
+
 export function ClientForm({ client, onSubmit, onCancel, isLoading }: ClientFormProps) {
-  // Form validation function
-  const validate = (values: CreateClientInput) => {
-    const errors: Record<string, string> = {};
-
-    if (!values.firstName.trim()) {
-      errors.firstName = 'First name is required';
-    }
-
-    if (!values.phone.trim()) {
-      errors.phone = 'Phone number is required';
-    } else if (!/^\+?[\d\s\-()]+$/.test(values.phone)) {
-      errors.phone = 'Invalid phone number format';
-    }
-
-    if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
-      errors.email = 'Invalid email format';
-    }
-
-    return errors;
-  };
-
   // Initialize form values from client prop or empty values
   const [formState, formHandlers] = useForm<CreateClientInput>(
-    {
-      firstName: '',
-      lastName: '',
-      phone: '',
-      email: '',
-      birthday: '',
-      notes: '',
-    },
-    validate,
-    (initialValues) => {
-      // Reset form when client prop changes
-      if (client) {
-        formHandlers.setFieldValue('firstName', client.firstName || '');
-        formHandlers.setFieldValue('lastName', client.lastName || '');
-        formHandlers.setFieldValue('phone', client.phone || '');
-        formHandlers.setFieldValue('email', client.email || '');
-        formHandlers.setFieldValue('birthday', client.birthday ? client.birthday.split('T')[0] : '');
-        formHandlers.setFieldValue('notes', client.notes || '');
-      } else {
-        // Reset to empty values
-        formHandlers.reset();
-      }
-    }
+    DEFAULT_CLIENT_VALUES,
+    validateClientForm
   );
 
-  const { values: formData, errors, isValid } = formState;
-  const { handleChange, handleSubmit: formHandleSubmit, reset } = formHandlers;
+  // Reset form when client prop changes
+  useEffect(() => {
+    if (client) {
+      formHandlers.setFieldValue('firstName', client.firstName || '');
+      formHandlers.setFieldValue('lastName', client.lastName || '');
+      formHandlers.setFieldValue('phone', client.phone || '');
+      formHandlers.setFieldValue('email', client.email || '');
+      formHandlers.setFieldValue('birthday', client.birthday ? client.birthday.split('T')[0] : '');
+      formHandlers.setFieldValue('notes', client.notes || '');
+    } else {
+      // Reset to empty values
+      formHandlers.reset();
+    }
+  }, [client]);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const { values: formData, errors, isValid } = formState;
+  const { handleChange } = formHandlers;
+
+  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!isValid) return;
 
@@ -107,7 +120,7 @@ export function ClientForm({ client, onSubmit, onCancel, isLoading }: ClientForm
       {/* Last Name */}
       <div>
         <label htmlFor="lastName" className="block text-sm font-medium text-slate-700 mb-1">
-          Last Name
+          Last Name <span className="text-red-500">*</span>
         </label>
         <input
           type="text"
@@ -118,6 +131,9 @@ export function ClientForm({ client, onSubmit, onCancel, isLoading }: ClientForm
           className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-700 placeholder:text-slate-400 transition-colors"
           placeholder="Doe"
         />
+        {errors.lastName && (
+          <p className="mt-1 text-sm text-red-600">{errors.lastName}</p>
+        )}
       </div>
 
       {/* Phone */}

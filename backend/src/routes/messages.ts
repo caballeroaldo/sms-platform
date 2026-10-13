@@ -12,7 +12,7 @@ import { Router, Request, Response } from 'express';
 import { clients as dbClients, messages as dbMessages } from '../db/database.js';
 import { authenticate } from '../middleware/index.js';
 import { SendBulkMessageInput, ApiResponse } from '../types/index.js';
-import { sendSMS } from '../services/twilio.js';
+import { sendSMS } from '../services/sms.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { validateRequest, schemas } from '../utils/validateRequest.js';
 import { formatResponse } from '../utils/formatResponse.js';

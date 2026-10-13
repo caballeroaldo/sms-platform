@@ -28,16 +28,12 @@ export function useForm<T extends Record<string, any>>(
   const [values, setValues] = useState<T>(initialValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Calculate validity
-  const isValid = Object.keys(errors).length === 0;
-
   // Handle external reset (e.g., when props change)
   useEffect(() => {
     if (resetOnChange) {
       resetOnChange(initialValues);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialValues, resetOnChange]);
+  }, [initialValues]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -61,15 +57,15 @@ export function useForm<T extends Record<string, any>>(
     // Validate on blur for better UX
     const fieldErrors = validateFn(values);
     if (fieldErrors[name]) {
-      setErrors(prev => ({ ...prev, [name]: fieldErrors[name] }));
+      setErrors(prev => ({ ...prev, [name]: fieldErrors[name] as string }));
     }
   }, [values, validateFn]);
 
   const handleSubmit = useCallback((onSubmit: (data: T) => void) => {
-    return (e: React.FormEvent) => {
+    return (e: React.SyntheticEvent) => {
       e.preventDefault();
       const fieldErrors = validateFn(values);
-      setErrors(fieldErrors);
+      setErrors(fieldErrors as Record<string, string>);
 
       if (Object.keys(fieldErrors).length === 0) {
         onSubmit(values);
@@ -89,10 +85,10 @@ export function useForm<T extends Record<string, any>>(
     }));
 
     // Clear error for this field when programmatically setting value
-    if (errors[field]) {
+    if (errors[field as string]) {
       setErrors(prev => {
         const newErrors = { ...prev };
-        delete newErrors[field];
+        delete newErrors[field as string];
         return newErrors;
       });
     }
@@ -105,7 +101,7 @@ export function useForm<T extends Record<string, any>>(
   const clearError = useCallback((field: keyof T) => {
     setErrors(prev => {
       const newErrors = { ...prev };
-      delete newErrors[field];
+      delete newErrors[field as string];
       return newErrors;
     });
   }, []);
@@ -113,7 +109,7 @@ export function useForm<T extends Record<string, any>>(
   const formState: FormState<T> = {
     values,
     errors,
-    isValid
+    isValid: Object.keys(errors).length === 0
   };
 
   const formHandlers: FormHandlers<T> = {

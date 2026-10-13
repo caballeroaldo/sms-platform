@@ -202,7 +202,7 @@ export const schemas = {
     scheduleTime: futureDate(),
     recurrence: validateEnum(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY']),
     audience: validateEnum(['ALL', 'PREV_YEAR_ACTIVE', 'MANUAL']),
-    manualRecipientIds: arrayOfStrings()
+    manualRecipientIds: arrayOfStrings(),
   },
   updateCampaign: {
     name: (value: any): string | undefined => {

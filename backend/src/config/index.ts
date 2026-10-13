@@ -19,6 +19,12 @@ const __dirname = path.dirname(__filename);
 // Load .env file (only in development)
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config({ path: path.join(__dirname, '../../.env') });
+  // Debug: log loaded environment variables
+  console.log('Loaded .env file from:', path.join(__dirname, '../../.env'));
+  console.log('SINCH_SERVICE_PLAN_ID from process.env:', process.env.SINCH_SERVICE_PLAN_ID ? 'SET' : 'NOT SET');
+  console.log('SINCH_API_TOKEN from process.env:', process.env.SINCH_API_TOKEN ? 'SET' : 'NOT SET');
+  console.log('SINCH_PHONE_NUMBER from process.env:', process.env.SINCH_PHONE_NUMBER ? 'SET' : 'NOT SET');
+  console.log('SINCH_PROJECT_ID from process.env:', process.env.SINCH_PROJECT_ID ? 'SET' : 'NOT SET');
 }
 
 interface Config {
@@ -48,6 +54,17 @@ interface Config {
   twilioContentSid: string;
   twilioPhoneNumber: string;
   twilioWebhookAuthToken: string;
+
+  // Sinch
+  sinchServicePlanId: string;
+  sinchApiToken: string;
+  sinchPhoneNumber: string;
+  sinchProjectId: string;
+  sinchRegion: string;
+  sinchAppId: string;
+
+  // SMS Provider Selection - 'twilio' | 'sinch' | 'mock'
+  smsProvider: 'twilio' | 'sinch' | 'mock';
 }
 
 function optional(key: string, defaultValue: string): string {
@@ -80,17 +97,35 @@ export const config: Config = {
   twilioContentSid: optional('TWILIO_CONTENT_SID', ''),
   twilioPhoneNumber: optional('TWILIO_PHONE_NUMBER', '+15551234567'),
   twilioWebhookAuthToken: optional('TWILIO_WEBHOOK_AUTH_TOKEN', ''),
+
+  // Sinch
+  sinchServicePlanId: optional('SINCH_SERVICE_PLAN_ID', ''),
+  sinchApiToken: optional('SINCH_API_TOKEN', ''),
+  sinchPhoneNumber: optional('SINCH_PHONE_NUMBER', ''),
+  sinchProjectId: optional('SINCH_PROJECT_ID', ''),
+  sinchRegion: optional('SINCH_REGION', 'US'), // Default to US region
+  sinchAppId: optional('SINCH_APP_ID', ''), // App ID for Sinch Conversation API
+
+  // SMS Provider Selection - 'twilio' | 'sinch' | 'mock'
+  smsProvider: (optional('SMS_PROVIDER', 'twilio') as 'twilio' | 'sinch' | 'mock')
 };
 
 // Check if we have required external services
-export const isMockMode = !config.databaseUrl || !config.twilioAccountSid;
+// Also consider explicit mock mode via SMS_PROVIDER=mock
+export const isMockMode =
+  config.smsProvider === 'mock' ||
+  !config.databaseUrl ||
+  (config.smsProvider === 'twilio' && !config.twilioAccountSid) ||
+  (config.smsProvider === 'sinch' && (!config.sinchServicePlanId || !config.sinchApiToken || !config.sinchProjectId || !config.sinchPhoneNumber || !config.sinchAppId));
 
-// Debug: log Twilio config values (remove in production)
-console.log('Twilio config:', {
-  accountSid: config.twilioAccountSid ? 'set' : '',
-  messagingServiceSid: JSON.stringify(config.twilioMessagingServiceSid),
-  contentSid: JSON.stringify(config.twilioContentSid),
-  phoneNumber: config.twilioPhoneNumber,
+// Debug: log SMS provider config values (remove in production)
+console.log('SMS Provider config:', {
+  provider: config.smsProvider,
+  twilioAccountSid: config.twilioAccountSid ? 'set' : '',
+  sinchServicePlanId: config.sinchServicePlanId ? 'set' : '',
+  sinchPhoneNumber: config.sinchPhoneNumber ? 'set' : '',
+  sinchProjectId: config.sinchProjectId ? 'set' : '',
+  isMockMode,
 });
 
 export default config;

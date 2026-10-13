@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useForm } from '@/lib/hooks/useForm';
 import type { Campaign, CreateCampaignInput, AudienceType } from '@/lib/types';
 import { useTemplates, useClientCount } from '@/lib/hooks/useApi';
@@ -46,32 +46,32 @@ function priorTaxYearWindow(): string {
   return `Jan 1, ${y} – Dec 31, ${y}`;
 }
 
-export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: CampaignFormProps) {
-  // Form validation function
-  const validate = (values: CreateCampaignInput) => {
-    const errors: Record<string, string> = {};
-    if (!values.name.trim()) {
-      errors.name = 'Campaign name is required';
-    } else if (values.name.trim().length > 100) {
-      errors.name = 'Name must be at most 100 characters';
+// Form validation function - moved outside to prevent recreation on every render
+const validateCampaignForm = (values: CreateCampaignInput) => {
+  const errors: Record<string, string> = {};
+  if (!values.name || !values.name.trim()) {
+    errors.name = 'Campaign name is required';
+  } else if (values.name.trim().length > 100) {
+    errors.name = 'Name must be at most 100 characters';
+  }
+  if (values.description && values.description.length > 500) {
+    errors.description = 'Description must be at most 500 characters';
+  }
+  if (values.scheduleTime) {
+    const chosen = new Date(values.scheduleTime);
+    if (Number.isNaN(chosen.getTime())) {
+      errors.scheduleTime = 'Invalid date';
+    } else if (chosen.getTime() <= Date.now()) {
+      errors.scheduleTime = 'Schedule time must be in the future';
     }
-    if (values.description && values.description.length > 500) {
-      errors.description = 'Description must be at most 500 characters';
-    }
-    if (values.scheduleTime) {
-      const chosen = new Date(values.scheduleTime);
-      if (Number.isNaN(chosen.getTime())) {
-        errors.scheduleTime = 'Invalid date';
-      } else if (chosen.getTime() <= Date.now()) {
-        errors.scheduleTime = 'Schedule time must be in the future';
-      }
-    }
-    if (values.audience === 'MANUAL' && (values.manualRecipientIds ?? []).length === 0) {
-      errors.manualRecipientIds = 'Select at least one client';
-    }
-    return errors;
-  };
+  }
+  if (values.audience === 'MANUAL' && (values.manualRecipientIds ?? []).length === 0) {
+    errors.manualRecipientIds = 'Select at least one client';
+  }
+  return errors;
+};
 
+export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: CampaignFormProps) {
   // Initialize form values from campaign prop or empty values
   const [formState, formHandlers] = useForm<CreateCampaignInput>(
     {
@@ -83,8 +83,8 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
       audience: 'ALL',
       manualRecipientIds: [],
     },
-    validate,
-    (initialValues) => {
+    validateCampaignForm,
+    (_) => {
       // Reset form when campaign prop changes
       if (campaign) {
         // Backend stores scheduleTime as ISO; the input element wants yyyy-MM-ddTHH:mm.
@@ -114,7 +114,7 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
   const { handleChange, setFieldValue } = formHandlers;
   // Note: reset is available but not used directly in this component
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!isValid) return;
 

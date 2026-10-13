@@ -132,6 +132,15 @@ export interface ScheduleMessageInput {
   variables?: Record<string, string>;
 }
 
+// SMS Result Type
+export interface SendSMSResult {
+  success: boolean;
+  sid?: string;
+  error?: string;
+  status?: string;
+  mockMode?: boolean;
+}
+
 // ===========================================
 // Export all enums for external use
 // ===========================================

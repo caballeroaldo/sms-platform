@@ -19,23 +19,23 @@ const TEMPLATE_CATEGORIES: { value: TemplateCategory; label: string }[] = [
   { value: 'ALERT', label: 'Alert' },
 ];
 
-export function TemplateForm({ template, onSubmit, onCancel, isLoading }: TemplateFormProps) {
-  // Form validation function
-  const validate = (values: CreateTemplateInput) => {
-    const errors: Record<string, string> = {};
-    if (!values.name.trim()) {
-      errors.name = 'Template name is required';
-    } else if (values.name.trim().length > 100) {
-      errors.name = 'Name must be at most 100 characters';
-    }
-    if (!values.content.trim()) {
-      errors.content = 'Template content is required';
-    } else if (values.content.length > 1000) {
-      errors.content = 'Content must be at most 1000 characters';
-    }
-    return errors;
-  };
+// Form validation function - moved outside to prevent recreation on every render
+const validateTemplateForm = (values: CreateTemplateInput) => {
+  const errors: Record<string, string> = {};
+  if (!values.name || !values.name.trim()) {
+    errors.name = 'Template name is required';
+  } else if (values.name.trim().length > 100) {
+    errors.name = 'Name must be at most 100 characters';
+  }
+  if (!values.content || !values.content.trim()) {
+    errors.content = 'Template content is required';
+  } else if (values.content.length > 1000) {
+    errors.content = 'Content must be at most 1000 characters';
+  }
+  return errors;
+};
 
+export function TemplateForm({ template, onSubmit, onCancel, isLoading }: TemplateFormProps) {
   // Initialize form values from template prop or empty values
   const [formState, formHandlers] = useForm<CreateTemplateInput>(
     {
@@ -43,7 +43,7 @@ export function TemplateForm({ template, onSubmit, onCancel, isLoading }: Templa
       category: 'NOTIFICATION',
       content: '',
     },
-    validate,
+    validateTemplateForm,
     (initialValues) => {
       // Reset form when template prop changes
       if (template) {
@@ -60,7 +60,7 @@ export function TemplateForm({ template, onSubmit, onCancel, isLoading }: Templa
   const { values: formData, errors, isValid } = formState;
   const { handleChange, reset } = formHandlers;
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!isValid) return;
 

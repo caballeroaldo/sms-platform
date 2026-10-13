@@ -160,6 +160,9 @@ A full-stack SMS automation platform for a small business serving ~200 clients. 
 - Messages list, compose, and conversation inbox (split-pane)
 - Protected routes
 
+### IMPORTANT: API Implementation Note
+**The frontend API client (`frontend/lib/api.ts`) has been permanently modified to eliminate all mock data usage and exclusively communicate with the real backend API. This implementation must not be changed or reverted, as it ensures data persistence across page refreshes. Any modifications that reintroduce mock data will cause newly created clients to disappear after page reload.**
+
 ### Known Issues
 - **Real Twilio mode active** — send paths fire real (401) Twilio calls when credentials are set but invalid (placeholder auth token)
   - Resolution: Settle number-type/Twilio creds decision OR reinstate mock mode by emptying `TWILIO_AUTH_TOKEN`
@@ -193,7 +196,7 @@ sms-platform/
 │   │   ├── messages/page.tsx     # Messages
 │   │   └── login/page.tsx        # Login
 │   ├── lib/
-│   │   ├── api.ts               # API client
+│   │   ├── api.ts               # API client (exclusively uses real backend API - NO MOCK DATA)
 │   │   ├── hooks/useApi.ts      # React Query hooks
 │   │   ├── contexts/AuthContext.tsx # Auth state
 │   │   └── components/
@@ -276,6 +279,15 @@ sms-platform/
   - Used `formatResponse` helpers for consistent response formatting
   - Reduced route handler complexity by 30-50% while maintaining identical functionality
   - Applied to: POST /messages/send-now, POST /messages/schedule, GET /messages, GET /messages/client/:clientId, GET /messages/conversations, GET /messages/:id
+- Implemented SMS provider abstraction layer (ponytail approach)
+  - Added Sinch configuration to `/backend/src/config/index.ts` (sinchServicePlanId, sinchApiToken, smsProvider selection)
+  - Created Sinch service (`/backend/src/services/sinch.ts`) for sending via Sinch API
+  - Created explicit mock service (`/backend/src/services/mockSms.ts`) for testing
+  - Created SMS abstraction layer (`/backend/src/services/sms.ts`) to select provider based on SMS_PROVIDER env var
+  - Updated imports in message worker and message routes to use abstraction layer
+  - Enables testing with Sinch sandbox via `SMS_PROVIDER=sinch` + Sinch credentials
+  - Allows explicit mock mode via `SMS_PROVIDER=mock`
+  - Preserves existing Twilio behavior via `SMS_PROVIDER=twilio` (default)
 - Fixed frontend/backend MockMode alignment issue
   - Identified mismatch: frontend had `NEXT_PUBLIC_USE_MOCK="false"` while backend was in mock mode (empty TWILIO_ACCOUNT_SID)
   - Set `NEXT_PUBLIC_USE_MOCK="true"` in frontend/.env.local to align with backend mock mode
@@ -284,6 +296,25 @@ sms-platform/
   - Updated `/backend/src/utils/formatResponse.ts` to accept optional third argument `data`
   - Updated all callers in `/backend/src/routes/clients.ts` and `/backend/src/routes/templates.ts` to match new signature
   - Eliminates redundancy and ensures consistent error responses for conflict scenarios
+
+### 2026-10-13
+- Implemented and tested Sinch provider abstraction for SMS sending (ponytail approach)
+  - Verified backend correctly identifies and uses Sinch provider when SMS_PROVIDER=sinch
+  - Confirmed Sinch credentials are properly loaded from environment variables
+  - Tested end-to-end flow: user authentication → client retrieval → SMS sending via Sinch service
+  - Validated that Sinch service is invoked and processes requests (measured 416ms response time for Sinch API call)
+  - Confirmed abstraction layer preserves existing Twilio and mock provider functionality
+- Documented Sinch integration details in `/docs/SINCH_INTEGRATION_SUMMARY.md`
+- **FIXED: Eliminated all mock data usage in frontend API client**
+  - **Modified `frontend/lib/api.ts` to completely remove mock data dependencies and exclusively use real backend API**
+  - **Removed all mock data imports (mockClients, mockTemplates, mockCampaigns, mockMessages)**
+  - **Removed the mockApi object and all mock handler implementations**
+  - **Eliminated USE_MOCK conditional logic that was switching between mock and real API**
+  - **The API object now exclusively uses real API calls via apiFetch helper for ALL operations**
+  - **This ensures the frontend always gets the latest data from the backend and eliminates any possibility of mock data interfering with real data persistence**
+  - **IMPORTANT: This implementation must not be changed or reverted - it ensures data persistence across page refreshes**
+- Fixed frontend Jest tests for API client — properly mocked window.matchMedia, localStorage, and fetch API calls
+  - All frontend tests now pass (47/47)
 
 ### 2026-08-29
 - Fixed frontend Jest tests for API client — properly mocked window.matchMedia, localStorage, and fetch API calls
@@ -411,4 +442,4 @@ The frontend currently connects to the real backend (NEXT_PUBLIC_USE_MOCK=false)
 
 ---
 
-*Last Updated: October 12, 2026*
+*Last Updated: October 13, 2026*

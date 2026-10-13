@@ -6,7 +6,7 @@
 import { Worker, Queue, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import prisma from '../prisma/client.js';
-import { sendSMS } from '../services/twilio.js';
+import { sendSMS } from '../services/sms.js';
 import config from '../config/index.js';
 
 // Redis connection for BullMQ

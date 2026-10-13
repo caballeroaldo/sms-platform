@@ -119,12 +119,31 @@ export function useCreateClient(options?: UseCreateClientOptions) {
   return useMutation({
     mutationFn: async (input: CreateClientInput) => {
       const response = await api.createClient(input);
-      if (!response.success) throw new Error(response.error);
+      if (!response.success) {
+        // Enhance error to preserve validation data for better error reporting
+        const error = new Error(response.error) as Error & {
+          validationData?: unknown;
+        };
+        if (response.data !== undefined) {
+          error.validationData = response.data;
+        }
+        throw error;
+      }
       return response.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] });
       options?.onSuccess?.();
+    },
+    onError: (error: Error) => {
+      let errorMessage = error.message || 'Failed to create client';
+      // If this is a validation error with field-specific details, format them nicely
+      if ('validationData' in error && error.validationData) {
+        const validationErrors = error.validationData as Record<string, string>;
+        const messages = Object.values(validationErrors);
+        errorMessage = messages.join(' . ');
+      }
+      options?.onError?.(errorMessage);
     },
   });
 }
@@ -147,6 +166,9 @@ export function useUpdateClient(options?: UseUpdateClientOptions) {
       queryClient.invalidateQueries({ queryKey: ['clients'] });
       queryClient.invalidateQueries({ queryKey: ['clients', id] });
       options?.onSuccess?.();
+    },
+    onError: (error: Error) => {
+      options?.onError?.(error.message);
     },
   });
 }
