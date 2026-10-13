@@ -28,7 +28,7 @@ export function Navigation() {
   };
 
   return (
-    <nav className="bg-slate-900 text-white">
+    <nav className="bg-slate-900/80 backdrop-blur-sm text-white fixed inset-x-0 top-0 z-50">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center">

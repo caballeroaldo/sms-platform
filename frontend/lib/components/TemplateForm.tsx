@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useForm } from '@/lib/hooks/useForm';
 import type { Template, CreateTemplateInput, TemplateCategory } from '@/lib/types';
 
 interface TemplateFormProps {
@@ -19,69 +20,55 @@ const TEMPLATE_CATEGORIES: { value: TemplateCategory; label: string }[] = [
 ];
 
 export function TemplateForm({ template, onSubmit, onCancel, isLoading }: TemplateFormProps) {
-  const [formData, setFormData] = useState<CreateTemplateInput>({
-    name: '',
-    category: 'NOTIFICATION',
-    content: '',
-  });
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (template) {
-      setFormData({
-        name: template.name || '',
-        category: template.category || 'NOTIFICATION',
-        content: template.content || '',
-      });
-    } else {
-      setFormData({
-        name: '',
-        category: 'NOTIFICATION',
-        content: '',
-      });
+  // Form validation function
+  const validate = (values: CreateTemplateInput) => {
+    const errors: Record<string, string> = {};
+    if (!values.name.trim()) {
+      errors.name = 'Template name is required';
+    } else if (values.name.trim().length > 100) {
+      errors.name = 'Name must be at most 100 characters';
     }
-    setErrors({});
-  }, [template]);
-
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    if (errors[name]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
-      });
+    if (!values.content.trim()) {
+      errors.content = 'Template content is required';
+    } else if (values.content.length > 1000) {
+      errors.content = 'Content must be at most 1000 characters';
     }
+    return errors;
   };
 
-  const validate = (): boolean => {
-    const newErrors: Record<string, string> = {};
-    if (!formData.name.trim()) {
-      newErrors.name = 'Template name is required';
-    } else if (formData.name.trim().length > 100) {
-      newErrors.name = 'Name must be at most 100 characters';
+  // Initialize form values from template prop or empty values
+  const [formState, formHandlers] = useForm<CreateTemplateInput>(
+    {
+      name: '',
+      category: 'NOTIFICATION',
+      content: '',
+    },
+    validate,
+    (initialValues) => {
+      // Reset form when template prop changes
+      if (template) {
+        formHandlers.setFieldValue('name', template.name || '');
+        formHandlers.setFieldValue('category', template.category || 'NOTIFICATION');
+        formHandlers.setFieldValue('content', template.content || '');
+      } else {
+        // Reset to empty values
+        formHandlers.reset();
+      }
     }
-    if (!formData.content.trim()) {
-      newErrors.content = 'Template content is required';
-    } else if (formData.content.length > 1000) {
-      newErrors.content = 'Content must be at most 1000 characters';
-    }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+  );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const { values: formData, errors, isValid } = formState;
+  const { handleChange, reset } = formHandlers;
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (validate()) {
-      onSubmit({
-        name: formData.name.trim(),
-        category: formData.category,
-        content: formData.content.trim(),
-      });
-    }
+    if (!isValid) return;
+
+    onSubmit({
+      name: formData.name.trim(),
+      category: formData.category,
+      content: formData.content.trim(),
+    });
   };
 
   const isEditMode = !!template;
@@ -97,7 +84,7 @@ export function TemplateForm({ template, onSubmit, onCancel, isLoading }: Templa
       <div>
         <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">
           Template Name <span className="text-red-500">*</span>
-       </label>
+        </label>
         <input
           type="text"
           id="name"
@@ -113,13 +100,13 @@ export function TemplateForm({ template, onSubmit, onCancel, isLoading }: Templa
         {errors.name && (
           <p className="mt-1 text-sm text-red-600">{errors.name}</p>
         )}
-     </div>
+      </div>
 
       {/* Category */}
       <div>
         <label htmlFor="category" className="block text-sm font-medium text-slate-700 mb-1">
           Category <span className="text-red-500">*</span>
-       </label>
+        </label>
         <select
           id="category"
           name="category"
@@ -130,16 +117,16 @@ export function TemplateForm({ template, onSubmit, onCancel, isLoading }: Templa
           {TEMPLATE_CATEGORIES.map((c) => (
             <option key={c.value} value={c.value}>
               {c.label}
-           </option>
+            </option>
           ))}
-       </select>
-     </div>
+        </select>
+      </div>
 
       {/* Content */}
       <div>
         <label htmlFor="content" className="block text-sm font-medium text-slate-700 mb-1">
           Content <span className="text-red-500">*</span>
-       </label>
+        </label>
         <textarea
           id="content"
           name="content"
@@ -164,11 +151,11 @@ export function TemplateForm({ template, onSubmit, onCancel, isLoading }: Templa
                 className="inline-flex items-center px-1.5 py-0.5 bg-slate-100 text-slate-700 text-xs rounded font-mono"
               >
                 {`{{${p}}}`}
-             </span>
+              </span>
             ))}
-         </div>
+          </div>
         )}
-     </div>
+      </div>
 
       {/* Actions */}
       <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
@@ -179,7 +166,7 @@ export function TemplateForm({ template, onSubmit, onCancel, isLoading }: Templa
           className="px-4 py-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
         >
           Cancel
-       </button>
+        </button>
         <button
           type="submit"
           disabled={isLoading}
@@ -189,11 +176,11 @@ export function TemplateForm({ template, onSubmit, onCancel, isLoading }: Templa
             <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-           </svg>
+            </svg>
           )}
           {isEditMode ? 'Update Template' : 'Add Template'}
-       </button>
-     </div>
-   </form>
+        </button>
+      </div>
+    </form>
   );
 }

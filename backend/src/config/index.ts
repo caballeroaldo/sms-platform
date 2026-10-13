@@ -45,16 +45,9 @@ interface Config {
   twilioApiKeySid: string;
   twilioApiKeySecret: string;
   twilioMessagingServiceSid: string;
+  twilioContentSid: string;
   twilioPhoneNumber: string;
   twilioWebhookAuthToken: string;
-}
-
-function required(key: string): string {
-  const value = process.env[key];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
-  return value;
 }
 
 function optional(key: string, defaultValue: string): string {
@@ -84,11 +77,20 @@ export const config: Config = {
   twilioApiKeySid: optional('TWILIO_API_KEY_SID', ''),
   twilioApiKeySecret: optional('TWILIO_API_KEY_SECRET', ''),
   twilioMessagingServiceSid: optional('TWILIO_MESSAGING_SERVICE_SID', ''),
+  twilioContentSid: optional('TWILIO_CONTENT_SID', ''),
   twilioPhoneNumber: optional('TWILIO_PHONE_NUMBER', '+15551234567'),
   twilioWebhookAuthToken: optional('TWILIO_WEBHOOK_AUTH_TOKEN', ''),
 };
 
 // Check if we have required external services
 export const isMockMode = !config.databaseUrl || !config.twilioAccountSid;
+
+// Debug: log Twilio config values (remove in production)
+console.log('Twilio config:', {
+  accountSid: config.twilioAccountSid ? 'set' : '',
+  messagingServiceSid: JSON.stringify(config.twilioMessagingServiceSid),
+  contentSid: JSON.stringify(config.twilioContentSid),
+  phoneNumber: config.twilioPhoneNumber,
+});
 
 export default config;

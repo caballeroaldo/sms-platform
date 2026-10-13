@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useForm } from '@/lib/hooks/useForm';
 import type { Client, CreateClientInput } from '@/lib/types';
 
 interface ClientFormProps {
@@ -11,89 +12,71 @@ interface ClientFormProps {
 }
 
 export function ClientForm({ client, onSubmit, onCancel, isLoading }: ClientFormProps) {
-  const [formData, setFormData] = useState<CreateClientInput>({
-    firstName: '',
-    lastName: '',
-    phone: '',
-    email: '',
-    birthday: '',
-    notes: '',
-  });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  // Form validation function
+  const validate = (values: CreateClientInput) => {
+    const errors: Record<string, string> = {};
 
-  useEffect(() => {
-    if (client) {
-      setFormData({
-        firstName: client.firstName || '',
-        lastName: client.lastName || '',
-        phone: client.phone || '',
-        email: client.email || '',
-        birthday: client.birthday ? client.birthday.split('T')[0] : '',
-        notes: client.notes || '',
-      });
-    } else {
-      setFormData({
-        firstName: '',
-        lastName: '',
-        phone: '',
-        email: '',
-        birthday: '',
-        notes: '',
-      });
+    if (!values.firstName.trim()) {
+      errors.firstName = 'First name is required';
     }
-    setErrors({});
-  }, [client]);
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    // Clear error when user starts typing
-    if (errors[name]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
-      });
+    if (!values.phone.trim()) {
+      errors.phone = 'Phone number is required';
+    } else if (!/^\+?[\d\s\-()]+$/.test(values.phone)) {
+      errors.phone = 'Invalid phone number format';
     }
+
+    if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
+      errors.email = 'Invalid email format';
+    }
+
+    return errors;
   };
 
-  const validate = (): boolean => {
-    const newErrors: Record<string, string> = {};
-
-    if (!formData.firstName.trim()) {
-      newErrors.firstName = 'First name is required';
+  // Initialize form values from client prop or empty values
+  const [formState, formHandlers] = useForm<CreateClientInput>(
+    {
+      firstName: '',
+      lastName: '',
+      phone: '',
+      email: '',
+      birthday: '',
+      notes: '',
+    },
+    validate,
+    (initialValues) => {
+      // Reset form when client prop changes
+      if (client) {
+        formHandlers.setFieldValue('firstName', client.firstName || '');
+        formHandlers.setFieldValue('lastName', client.lastName || '');
+        formHandlers.setFieldValue('phone', client.phone || '');
+        formHandlers.setFieldValue('email', client.email || '');
+        formHandlers.setFieldValue('birthday', client.birthday ? client.birthday.split('T')[0] : '');
+        formHandlers.setFieldValue('notes', client.notes || '');
+      } else {
+        // Reset to empty values
+        formHandlers.reset();
+      }
     }
+  );
 
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'Phone number is required';
-    } else if (!/^\+?[\d\s\-()]+$/.test(formData.phone)) {
-      newErrors.phone = 'Invalid phone number format';
-    }
+  const { values: formData, errors, isValid } = formState;
+  const { handleChange, handleSubmit: formHandleSubmit, reset } = formHandlers;
 
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Invalid email format';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (validate()) {
-      // Clean up the data - remove empty strings where optional
-      const submitData: CreateClientInput = {
-        firstName: formData.firstName.trim(),
-        lastName: formData.lastName.trim(),
-        phone: formData.phone.trim(),
-        email: formData.email?.trim() || undefined,
-        birthday: formData.birthday || undefined,
-        notes: formData.notes?.trim() || undefined,
-      };
-      onSubmit(submitData);
-    }
+    if (!isValid) return;
+
+    // Clean up the data - remove empty strings where optional
+    const submitData: CreateClientInput = {
+      firstName: formData.firstName.trim(),
+      lastName: formData.lastName.trim(),
+      phone: formData.phone.trim(),
+      email: formData.email?.trim() || undefined,
+      birthday: formData.birthday || undefined,
+      notes: formData.notes?.trim() || undefined,
+    };
+    onSubmit(submitData);
   };
 
   const isEditMode = !!client;

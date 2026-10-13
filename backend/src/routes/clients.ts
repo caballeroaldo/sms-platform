@@ -12,6 +12,10 @@ import { buildAudienceWhere } from '../utils/audience.js';
 import { parseCsvReport } from '../utils/csv.js';
 import { AudienceType } from '@prisma/client';
 import prisma from '../prisma/client.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { validateRequest } from '../utils/validateRequest.js';
+import { formatResponse } from '../utils/formatResponse.js';
+import { schemas } from '../utils/validateRequest.js';
 
 const router = Router();
 
@@ -31,66 +35,53 @@ function getQueryString(req: Request, key: string): string | undefined {
  * GET /clients
  * List all clients with pagination and filtering
  */
-router.get('/', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const page = Math.max(1, parseInt(getQueryString(req, 'page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(getQueryString(req, 'limit') || '50', 10)));
-    const skip = (page - 1) * limit;
-    const search = getQueryString(req, 'search');
-    const optedOutParam = getQueryString(req, 'optedOut');
+router.get('/', asyncHandler(async (req: Request, res: Response) => {
+  const page = Math.max(1, parseInt(getQueryString(req, 'page') || '1', 10));
+  const limit = Math.min(100, Math.max(1, parseInt(getQueryString(req, 'limit') || '50', 10)));
+  const skip = (page - 1) * limit;
+  const search = getQueryString(req, 'search');
+  const optedOutParam = getQueryString(req, 'optedOut');
 
-    // Parse optedOut: if param is 'true' show opted-out, if 'false' show opted-in, if undefined show all
-    let optedOut: boolean | undefined = undefined;
-    if (optedOutParam === 'true') optedOut = true;
-    if (optedOutParam === 'false') optedOut = false;
+  // Parse optedOut: if param is 'true' show opted-out, if 'false' show opted-in, if undefined show all
+  let optedOut: boolean | undefined = undefined;
+  if (optedOutParam === 'true') optedOut = true;
+  if (optedOutParam === 'false') optedOut = false;
 
-    const result = await db.findMany({ skip, take: limit, search, optedOut });
+  const result = await db.findMany({ skip, take: limit, search, optedOut });
 
-    res.json({
-      success: true,
-      data: {
-        clients: result.clients,
-        pagination: {
-          page,
-          limit,
-          total: result.total,
-          pages: Math.ceil(result.total / limit),
-        },
-      },
-    } as ApiResponse);
-  } catch (error) {
-    console.error('List clients error:', error);
-    res.status(500).json({ success: false, error: 'Failed to list clients' } as ApiResponse);
-  }
-});
+  return formatResponse.success(res, {
+    clients: result.clients,
+    pagination: {
+      page,
+      limit,
+      total: result.total,
+      pages: Math.ceil(result.total / limit),
+    },
+  });
+}));
 
 /**
  * POST /clients
  * Create a new client
  * Requires authentication
  */
-router.post('/', authenticate, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const input: CreateClientInput = req.body;
-
-    if (!input.firstName || !input.phone) {
-      res.status(400).json({ success: false, error: 'First name and phone are required' } as ApiResponse);
-      return;
-    }
+router.post('/',
+  authenticate,
+  validateRequest(schemas.createClient),
+  asyncHandler(async (req: Request, res: Response) => {
+    const input = req.body; // Already validated and typed
 
     let phone: string;
     try {
       phone = normalizeToE164(input.phone);
       if (!phone) throw new Error('Invalid phone number');
     } catch {
-      res.status(400).json({ success: false, error: 'Invalid phone number format' } as ApiResponse);
-      return;
+      return formatResponse.error(res, 'Invalid phone number format', 400);
     }
 
     const existing = await db.findByPhone(phone);
     if (existing) {
-      res.status(409).json({ success: false, error: 'A client with this phone number already exists' } as ApiResponse);
-      return;
+      return formatResponse.conflict(res, 'A client with this phone number already exists');
     }
 
     const client = await db.create({
@@ -102,12 +93,9 @@ router.post('/', authenticate, async (req: Request, res: Response): Promise<void
       notes: input.notes,
     });
 
-    res.status(201).json({ success: true, data: client } as ApiResponse);
-  } catch (error) {
-    console.error('Create client error:', error);
-    res.status(500).json({ success: false, error: 'Failed to create client' } as ApiResponse);
-  }
-});
+    return formatResponse.success(res, client, 201);
+  })
+);
 
 /**
  * GET /clients/count?audience=ALL|PREV_YEAR_ACTIVE
@@ -116,24 +104,15 @@ router.post('/', authenticate, async (req: Request, res: Response): Promise<void
  * MANUAL is not supported here — the form composes MANUAL counts locally from
  * the picked recipient IDs (which already require a separate client fetch).
  */
-router.get('/count', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const audienceParam = (getQueryString(req, 'audience') ?? 'ALL') as AudienceType;
-    if (audienceParam !== 'ALL' && audienceParam !== 'PREV_YEAR_ACTIVE') {
-      res.status(400).json({
-        success: false,
-        error: 'audience must be one of: ALL, PREV_YEAR_ACTIVE',
-      } as ApiResponse);
-      return;
-    }
-    const where = buildAudienceWhere(audienceParam);
-    const count = await prisma.client.count({ where });
-    res.json({ success: true, data: { count, audience: audienceParam } } as ApiResponse);
-  } catch (error) {
-    console.error('Count clients error:', error);
-    res.status(500).json({ success: false, error: 'Failed to count clients' } as ApiResponse);
+router.get('/count', asyncHandler(async (req: Request, res: Response) => {
+  const audienceParam = (getQueryString(req, 'audience') ?? 'ALL') as AudienceType;
+  if (audienceParam !== 'ALL' && audienceParam !== 'PREV_YEAR_ACTIVE') {
+    return formatResponse.error(res, 'audience must be one of: ALL, PREV_YEAR_ACTIVE', 400);
   }
-});
+  const where = buildAudienceWhere(audienceParam);
+  const count = await prisma.client.count({ where });
+  return formatResponse.success(res, { count, audience: audienceParam });
+}));
 
 /**
  * POST /clients/import
@@ -160,118 +139,111 @@ router.post(
   '/import',
   authenticate,
   express.text({ type: ['text/csv', 'text/plain'], limit: '10mb' }),
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const body = req.body;
-      if (!body || typeof body !== 'string' || body.trim() === '') {
-        res.status(400).json({ success: false, error: 'Request body must be a non-empty CSV string' } as ApiResponse);
-        return;
-      }
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const body = req.body;
+    if (!body || typeof body !== 'string' || body.trim() === '') {
+      formatResponse.error(res, 'Request body must be a non-empty CSV string', 400);
+      return;
+    }
 
-      const parsed = parseCsvReport(body);
+    const parsed = parseCsvReport(body);
 
-      let created = 0;
-      let existing = 0;
-      const errors: { lineNumber: number; reason: string; phone?: string }[] = [];
+    let created = 0;
+    let existing = 0;
+    const errors: { lineNumber: number; reason: string; phone?: string }[] = [];
 
-      for (const row of parsed.rows) {
-        try {
-          const found = await prisma.client.findUnique({ where: { phone: row.phone } });
-          if (found) {
-            // Refresh only the tax-season fields. Identity + optedOut are
-            // owned by the operator, not by the periodic tax report.
-            await prisma.client.update({
-              where: { id: found.id },
-              data: {
-                taxFiledDate: row.taxFiledDate,
-                taxReturnType: row.taxReturnType,
-                taxpayerStatus: row.taxpayerStatus,
-                inactive: row.inactive,
-                clientLY: row.clientLY,
-                clientNew: row.clientNew,
-              },
-            });
-            existing++;
-          } else {
-            await prisma.client.create({
-              data: {
-                firstName: row.firstName,
-                lastName: row.lastName,
-                phone: row.phone,
-                birthday: row.birthday,
-                taxFiledDate: row.taxFiledDate,
-                taxReturnType: row.taxReturnType,
-                taxpayerStatus: row.taxpayerStatus,
-                inactive: row.inactive,
-                clientLY: row.clientLY,
-                clientNew: row.clientNew,
-              },
-            });
-            created++;
-          }
-        } catch (err) {
-          // P2002 = unique-constraint violation. The CSV could carry a
-          // duplicate phone within the same file (two rows, same number) — the
-          // first creates, the second loses the findUnique race and throws
-          // P2002. Treat as "already known" rather than an error.
-          if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'P2002') {
-            existing++;
-            continue;
-          }
-          errors.push({
-            lineNumber: row.lineNumber,
-            reason: err instanceof Error ? err.message : 'Failed to upsert row',
-            phone: row.phone,
+    for (const row of parsed.rows) {
+      try {
+        const found = await prisma.client.findUnique({ where: { phone: row.phone } });
+        if (found) {
+          // Refresh only the tax-season fields. Identity + optedOut are
+          // owned by the operator, not by the periodic tax report.
+          await prisma.client.update({
+            where: { id: found.id },
+            data: {
+              taxFiledDate: row.taxFiledDate,
+              taxReturnType: row.taxReturnType,
+              taxpayerStatus: row.taxpayerStatus,
+              inactive: row.inactive,
+              clientLY: row.clientLY,
+              clientNew: row.clientNew,
+            },
           });
+          existing++;
+        } else {
+          await prisma.client.create({
+            data: {
+              firstName: row.firstName,
+              lastName: row.lastName,
+              phone: row.phone,
+              birthday: row.birthday,
+              taxFiledDate: row.taxFiledDate,
+              taxReturnType: row.taxReturnType,
+              taxpayerStatus: row.taxpayerStatus,
+              inactive: row.inactive,
+              clientLY: row.clientLY,
+              clientNew: row.clientNew,
+            },
+          });
+          created++;
         }
+      } catch (err) {
+        // P2002 = unique-constraint violation. The CSV could carry a
+        // duplicate phone within the same file (two rows, same number) — the
+        // first creates, the second loses the findUnique race and throws
+        // P2002. Treat as "already known" rather than an error.
+        if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'P2002') {
+          existing++;
+          continue;
+        }
+        errors.push({
+          lineNumber: row.lineNumber,
+          reason: err instanceof Error ? err.message : 'Failed to upsert row',
+          phone: row.phone,
+        });
       }
+    }
 
-      // Surface parser-level skips too, so the operator sees every dropped row.
-      const skipped = parsed.skipped.map((s) => ({
-        lineNumber: s.lineNumber,
-        reason: s.reason,
-        firstName: s.firstName,
-        lastName: s.lastName,
-        phone: s.phone,
-      }));
+    // Surface parser-level skips too, so the operator sees every dropped row.
+    const skipped = parsed.skipped.map((s) => ({
+      lineNumber: s.lineNumber,
+      reason: s.reason,
+      firstName: s.firstName,
+      lastName: s.lastName,
+      phone: s.phone,
+    }));
 
-      // Pass details as a plain object (NOT JSON.stringify) so Postgres stores
-      // a proper jsonb object — else the value is a double-encoded jsonb string
-      // and `details->>'created'` returns NULL. (Some older routes stringify;
-      // new code passes the object directly, matching the seed.)
-      await prisma.auditLog.create({
-        data: {
-          userId: req.user!.id,
-          actor: req.user!.email,
-          action: 'clients_imported',
-          details: {
-            created,
-            existing,
-            skipped: skipped.length,
-            errors: errors.length,
-            totalRows: parsed.totalDataRows,
-            asOf: parsed.asOf,
-          },
-          ipAddress: req.ip,
-        },
-      });
-
-      res.json({
-        success: true,
-        data: {
+    // Pass details as a plain object (NOT JSON.stringify) so Postgres stores
+    // a proper jsonb object — else the value is a double-encoded jsonb string
+    // and `details->>'created'` returns NULL. (Some older routes stringify;
+    // new code passes the object directly, matching the seed.)
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        actor: req.user!.email,
+        action: 'clients_imported',
+        details: {
           created,
           existing,
-          skipped,
-          errors,
+          skipped: skipped.length,
+          errors: errors.length,
           totalRows: parsed.totalDataRows,
           asOf: parsed.asOf,
         },
-      } as ApiResponse);
-    } catch (error) {
-      console.error('Import clients error:', error);
-      res.status(500).json({ success: false, error: 'Failed to import clients' } as ApiResponse);
-    }
-  },
+        ipAddress: req.ip,
+      },
+    });
+
+    formatResponse.success(res, {
+      created,
+      existing,
+      skipped,
+      errors,
+      totalRows: parsed.totalDataRows,
+      asOf: parsed.asOf,
+    });
+    return;
+  }),
 );
 
 /**
@@ -279,99 +251,78 @@ router.post(
  * Get client by ID
  * PUBLIC - No auth required
  */
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const id = req.params['id'] as string;
+router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
+  const id = req.params['id'] as string;
 
-    const client = await db.findUnique(id);
+  const client = await db.findUnique(id);
 
-    if (!client) {
-      res.status(404).json({ success: false, error: 'Client not found' } as ApiResponse);
-      return;
-    }
-
-    res.json({ success: true, data: client } as ApiResponse);
-  } catch (error) {
-    console.error('Get client error:', error);
-    res.status(500).json({ success: false, error: 'Failed to get client' } as ApiResponse);
+  if (!client) {
+    return formatResponse.notFound(res, 'Client not found');
   }
-});
+
+  return formatResponse.success(res, client);
+}));
 
 /**
  * PUT /clients/:id
  * Update client - Requires authentication
  */
-router.put('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const id = req.params['id'] as string;
-    const input = req.body;
+router.put('/:id', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const id = req.params['id'] as string;
+  const input = req.body;
 
-    const existing = await db.findUnique(id);
-    if (!existing) {
-      res.status(404).json({ success: false, error: 'Client not found' } as ApiResponse);
-      return;
-    }
-
-    // If phone is being updated, validate and check for duplicates
-    if (input.phone && input.phone !== existing.phone) {
-      let phone: string;
-      try {
-        phone = normalizeToE164(input.phone);
-        if (!phone) throw new Error('Invalid phone number');
-      } catch {
-        res.status(400).json({ success: false, error: 'Invalid phone number format' } as ApiResponse);
-        return;
-      }
-      input.phone = phone;
-
-      const existingPhone = await db.findByPhone(phone);
-      if (existingPhone && existingPhone.id !== id) {
-        res.status(409).json({ success: false, error: 'A client with this phone number already exists' } as ApiResponse);
-        return;
-      }
-    }
-
-    const updated = await db.update(id, {
-      firstName: input.firstName,
-      lastName: input.lastName,
-      phone: input.phone,
-      email: input.email,
-      birthday: input.birthday,
-      notes: input.notes,
-    });
-
-    res.json({ success: true, data: updated } as ApiResponse);
-  } catch (error) {
-    console.error('Update client error:', error);
-    res.status(500).json({ success: false, error: 'Failed to update client' } as ApiResponse);
+  const existing = await db.findUnique(id);
+  if (!existing) {
+    return formatResponse.notFound(res, 'Client not found');
   }
-});
+
+  // If phone is being updated, validate and check for duplicates
+  if (input.phone && input.phone !== existing.phone) {
+    let phone: string;
+    try {
+      phone = normalizeToE164(input.phone);
+      if (!phone) throw new Error('Invalid phone number');
+    } catch {
+      return formatResponse.error(res, 'Invalid phone number format', 400);
+    }
+    input.phone = phone;
+
+    const existingPhone = await db.findByPhone(phone);
+    if (existingPhone && existingPhone.id !== id) {
+      return formatResponse.conflict(res, 'A client with this phone number already exists');
+    }
+  }
+
+  const updated = await db.update(id, {
+    firstName: input.firstName,
+    lastName: input.lastName,
+    phone: input.phone,
+    email: input.email,
+    birthday: input.birthday,
+    notes: input.notes,
+  });
+
+  return formatResponse.success(res, updated);
+}));
 
 /**
  * DELETE /clients/:id
  * Soft delete (opt-out for compliance) - Requires authentication
  */
-router.delete('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
-  try {
+router.delete('/:id', authenticate, asyncHandler(async (req: Request, res: Response) => {
     const id = req.params['id'] as string;
 
     const client = await db.findUnique(id);
     if (!client) {
-      res.status(404).json({ success: false, error: 'Client not found' } as ApiResponse);
-      return;
+      return formatResponse.notFound(res, 'Client not found');
     }
 
     if (client.optedOut) {
-      res.status(400).json({ success: false, error: 'Client is already opted out' } as ApiResponse);
-      return;
+      return formatResponse.error(res, 'Client is already opted out', 400);
     }
 
     const deleted = await db.delete(id);
-    res.json({ success: true, data: deleted, message: 'Client opted out successfully' } as ApiResponse);
-  } catch (error) {
-    console.error('Delete client error:', error);
-    res.status(500).json({ success: false, error: 'Failed to opt out client' } as ApiResponse);
-  }
-});
+    return formatResponse.success(res, deleted, 200);
+}));
 
 export default router;

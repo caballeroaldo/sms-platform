@@ -252,6 +252,7 @@ model WebhookEvent {
   id          String   @id @default(cuid())
   eventType   String   @map("event_type")
   payloadHash String   @map("payload_hash") // SHA hash for deduplication
+  rawPayload  Json?
   processed   Boolean  @default(false)
   createdAt   DateTime @default(now()) @map("created_at")
 

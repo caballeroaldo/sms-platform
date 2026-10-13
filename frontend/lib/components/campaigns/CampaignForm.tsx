@@ -1,20 +1,7 @@
 'use client';
 
-/**
- * CampaignForm
- *
- * Add/Edit campaign form. Sections:
- *   1. Basics      — name, description
- *   2. Template    — pick from existing templates (optional)
- *   3. Schedule    — scheduleTime, recurrence (both optional)
- *   4. Audience    — All clients / Previous tax year active / Manual selection
- *
- * Audience is required: defaults to ALL on add. Switching to MANUAL without any
- * picked recipients is a validation error; switching audience modes doesn't
- * wipe previously picked recipients (MANUAL ids persist in form state).
- */
-
 import { useEffect, useMemo, useState } from 'react';
+import { useForm } from '@/lib/hooks/useForm';
 import type { Campaign, CreateCampaignInput, AudienceType } from '@/lib/types';
 import { useTemplates, useClientCount } from '@/lib/hooks/useApi';
 import { ClientPicker } from './ClientPicker';
@@ -60,118 +47,77 @@ function priorTaxYearWindow(): string {
 }
 
 export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: CampaignFormProps) {
-  const [formData, setFormData] = useState<CreateCampaignInput>({
-    name: '',
-    description: '',
-    templateId: '',
-    scheduleTime: '',
-    recurrence: 'NONE',
-    audience: 'ALL',
-    manualRecipientIds: [],
-  });
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  // Load templates for the picker dropdown.
-  const { data: templates, isLoading: isLoadingTemplates } = useTemplates();
-  const templateOptions = templates ?? [];
-
-  useEffect(() => {
-    if (campaign) {
-      // Backend stores scheduleTime as ISO; the input element wants yyyy-MM-ddTHH:mm.
-      const scheduleLocal = campaign.scheduleTime
-        ? toDatetimeLocalValue(campaign.scheduleTime)
-        : '';
-      // YEARLY is in the form's select — preserve whatever the campaign had.
-      const recurrence: 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY' =
-        campaign.recurrence === 'DAILY' || campaign.recurrence === 'WEEKLY' || campaign.recurrence === 'MONTHLY' || campaign.recurrence === 'NONE' || campaign.recurrence === 'YEARLY'
-          ? campaign.recurrence
-          : 'NONE';
-      setFormData({
-        name: campaign.name || '',
-        description: campaign.description || '',
-        templateId: campaign.templateId || '',
-        scheduleTime: scheduleLocal,
-        recurrence,
-        audience: campaign.audience || 'ALL',
-        manualRecipientIds: campaign.manualRecipientIds ?? [],
-      });
-    } else {
-      setFormData({
-        name: '',
-        description: '',
-        templateId: '',
-        scheduleTime: '',
-        recurrence: 'NONE',
-        audience: 'ALL',
-        manualRecipientIds: [],
-      });
+  // Form validation function
+  const validate = (values: CreateCampaignInput) => {
+    const errors: Record<string, string> = {};
+    if (!values.name.trim()) {
+      errors.name = 'Campaign name is required';
+    } else if (values.name.trim().length > 100) {
+      errors.name = 'Name must be at most 100 characters';
     }
-    setErrors({});
-  }, [campaign]);
-
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    if (errors[name]) {
-      setErrors((prev) => {
-        const out = { ...prev };
-        delete out[name];
-        return out;
-      });
+    if (values.description && values.description.length > 500) {
+      errors.description = 'Description must be at most 500 characters';
     }
-  };
-
-  const handleAudienceChange = (next: AudienceType) => {
-    setFormData((prev) => ({ ...prev, audience: next }));
-    setErrors((prev) => {
-      const out = { ...prev };
-      delete out.audience;
-      delete out.manualRecipientIds;
-      return out;
-    });
-  };
-
-  const handleManualIdsChange = (ids: string[]) => {
-    setFormData((prev) => ({ ...prev, manualRecipientIds: ids }));
-    if (errors.manualRecipientIds) {
-      setErrors((prev) => {
-        const out = { ...prev };
-        delete out.manualRecipientIds;
-        return out;
-      });
-    }
-  };
-
-  const validate = (): boolean => {
-    const next: Record<string, string> = {};
-    if (!formData.name.trim()) {
-      next.name = 'Campaign name is required';
-    } else if (formData.name.trim().length > 100) {
-      next.name = 'Name must be at most 100 characters';
-    }
-    if (formData.description && formData.description.length > 500) {
-      next.description = 'Description must be at most 500 characters';
-    }
-    if (formData.scheduleTime) {
-      const chosen = new Date(formData.scheduleTime);
+    if (values.scheduleTime) {
+      const chosen = new Date(values.scheduleTime);
       if (Number.isNaN(chosen.getTime())) {
-        next.scheduleTime = 'Invalid date';
+        errors.scheduleTime = 'Invalid date';
       } else if (chosen.getTime() <= Date.now()) {
-        next.scheduleTime = 'Schedule time must be in the future';
+        errors.scheduleTime = 'Schedule time must be in the future';
       }
     }
-    if (formData.audience === 'MANUAL' && (formData.manualRecipientIds ?? []).length === 0) {
-      next.manualRecipientIds = 'Select at least one client';
+    if (values.audience === 'MANUAL' && (values.manualRecipientIds ?? []).length === 0) {
+      errors.manualRecipientIds = 'Select at least one client';
     }
-    setErrors(next);
-    return Object.keys(next).length === 0;
+    return errors;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Initialize form values from campaign prop or empty values
+  const [formState, formHandlers] = useForm<CreateCampaignInput>(
+    {
+      name: '',
+      description: '',
+      templateId: '',
+      scheduleTime: '',
+      recurrence: 'NONE',
+      audience: 'ALL',
+      manualRecipientIds: [],
+    },
+    validate,
+    (initialValues) => {
+      // Reset form when campaign prop changes
+      if (campaign) {
+        // Backend stores scheduleTime as ISO; the input element wants yyyy-MM-ddTHH:mm.
+        const scheduleLocal = campaign.scheduleTime
+          ? toDatetimeLocalValue(campaign.scheduleTime)
+          : '';
+        // YEARLY is in the form's select — preserve whatever the campaign had.
+        const recurrence: 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY' =
+          campaign.recurrence === 'DAILY' || campaign.recurrence === 'WEEKLY' || campaign.recurrence === 'MONTHLY' || campaign.recurrence === 'NONE' || campaign.recurrence === 'YEARLY'
+            ? campaign.recurrence
+            : 'NONE';
+        formHandlers.setFieldValue('name', campaign.name || '');
+        formHandlers.setFieldValue('description', campaign.description || '');
+        formHandlers.setFieldValue('templateId', campaign.templateId || '');
+        formHandlers.setFieldValue('scheduleTime', scheduleLocal);
+        formHandlers.setFieldValue('recurrence', recurrence);
+        formHandlers.setFieldValue('audience', campaign.audience || 'ALL');
+        formHandlers.setFieldValue('manualRecipientIds', campaign.manualRecipientIds ?? []);
+      } else {
+        // Reset to empty values
+        formHandlers.reset();
+      }
+    }
+  );
+
+  const { values: formData, errors, isValid } = formState;
+  const { handleChange, setFieldValue } = formHandlers;
+  // Note: reset is available but not used directly in this component
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!validate()) return;
+    if (!isValid) return;
+
     const submitData: CreateCampaignInput = {
       name: formData.name.trim(),
       ...(formData.description?.trim() && { description: formData.description.trim() }),
@@ -182,6 +128,30 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
       ...(formData.audience === 'MANUAL' && { manualRecipientIds: formData.manualRecipientIds ?? [] }),
     };
     onSubmit(submitData);
+  };
+
+  // Load templates for the picker dropdown.
+  const { data: templates, isLoading: isLoadingTemplates } = useTemplates();
+  const templateOptions = templates ?? [];
+
+  // Handle audience changes - clear errors when switching
+  const handleAudienceChange = (next: AudienceType) => {
+    setFieldValue('audience', next);
+    // Clear audience and manualRecipientIds errors when switching
+    if (errors.audience) {
+      formHandlers.clearError('audience');
+    }
+    if (errors.manualRecipientIds) {
+      formHandlers.clearError('manualRecipientIds');
+    }
+  };
+
+  // Handle manual recipient IDs changes
+  const handleManualIdsChange = (ids: string[]) => {
+    setFieldValue('manualRecipientIds', ids);
+    if (errors.manualRecipientIds) {
+      formHandlers.clearError('manualRecipientIds');
+    }
   };
 
   const isEditMode = !!campaign;
@@ -206,7 +176,7 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
       <div>
         <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">
           Campaign Name <span className="text-red-500">*</span>
-      </label>
+        </label>
         <input
           type="text"
           id="name"
@@ -222,12 +192,12 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
         {errors.name && (
           <p className="mt-1 text-sm text-red-600">{errors.name}</p>
         )}
-    </div>
+      </div>
 
       <div>
         <label htmlFor="description" className="block text-sm font-medium text-slate-700 mb-1">
           Description
-      </label>
+        </label>
         <textarea
           id="description"
           name="description"
@@ -243,13 +213,13 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
         {errors.description && (
           <p className="mt-1 text-sm text-red-600">{errors.description}</p>
         )}
-    </div>
+      </div>
 
       {/* Template */}
       <div>
         <label htmlFor="templateId" className="block text-sm font-medium text-slate-700 mb-1">
           Template
-      </label>
+        </label>
         <select
           id="templateId"
           name="templateId"
@@ -262,20 +232,20 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
           {templateOptions.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name} ({t.category.toLowerCase()})
-          </option>
+            </option>
           ))}
-       </select>
+        </select>
         <p className="mt-1 text-xs text-slate-500">
           The campaign can be saved without a template, but it can't be sent until one is assigned.
-      </p>
-    </div>
+        </p>
+      </div>
 
       {/* Schedule */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label htmlFor="scheduleTime" className="block text-sm font-medium text-slate-700 mb-1">
             Schedule Time
-        </label>
+          </label>
           <input
             type="datetime-local"
             id="scheduleTime"
@@ -289,12 +259,12 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
           {errors.scheduleTime && (
             <p className="mt-1 text-sm text-red-600">{errors.scheduleTime}</p>
           )}
-      </div>
+        </div>
 
         <div>
           <label htmlFor="recurrence" className="block text-sm font-medium text-slate-700 mb-1">
             Recurrence
-        </label>
+          </label>
           <select
             id="recurrence"
             name="recurrence"
@@ -305,17 +275,17 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
             {RECURRENCE_OPTIONS.map((r) => (
               <option key={r.value} value={r.value}>
                 {r.label}
-            </option>
+              </option>
             ))}
-         </select>
+          </select>
+        </div>
       </div>
-     </div>
 
       {/* Audience */}
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">
           Audience
-      </label>
+        </label>
         <div className="space-y-2">
           {AUDIENCE_OPTIONS.map((opt) => {
             const checked = formData.audience === opt.value;
@@ -338,12 +308,12 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
                   <span className="block text-sm font-medium text-slate-900">{opt.title}</span>
                   <span className="block text-xs text-slate-500 mt-0.5">
                     {opt.value === 'PREV_YEAR_ACTIVE' ? `${opt.description} (${priorYearLabel})` : opt.description}
-                 </span>
-               </span>
-             </label>
+                  </span>
+                </span>
+              </label>
             );
           })}
-       </div>
+        </div>
 
         {/* Manual picker (only when selected) */}
         {formData.audience !== 'MANUAL' && (
@@ -360,9 +330,9 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
                 {serverCount.count === 0 && (
                   <span className="block mt-1 text-amber-700">
                     (audience will be empty — CSV import hasn&apos;t populated taxFiledDate yet.)
-                 </span>
+                   </span>
                 )}
-             </>
+              </>
             ) : formData.audience === 'ALL' && serverCount ? (
               <>
                 Will target{' '}
@@ -373,13 +343,13 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
                 {serverCount.count === 0 && (
                   <span className="block mt-1 text-amber-700">
                     (no opted-in clients exist yet.)
-                 </span>
+                   </span>
                 )}
-             </>
+              </>
             ) : (
               <span className="text-slate-400">Counting opted-in clients…</span>
             )}
-        </p>
+          </p>
         )}
         {formData.audience === 'MANUAL' && (
           <p className="mt-3 pl-7 text-xs text-slate-600">
@@ -389,7 +359,7 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
            </strong>{' '}
             client{manualPickedCount === 1 ? '' : 's'} from your manual selection.
             Opted-out picks are filtered at send time.
-        </p>
+          </p>
         )}
 
         {/* Manual picker (only when selected) */}
@@ -402,15 +372,15 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
             {errors.manualRecipientIds && (
               <p className="mt-1 text-sm text-red-600">{errors.manualRecipientIds}</p>
             )}
-         </div>
+          </div>
         )}
-     </div>
+      </div>
 
       {/* Hint */}
       <p className="text-xs text-slate-500">
         Campaigns in DRAFT or SCHEDULED can be edited; RUNNING and COMPLETED campaigns are
         locked because their recipient list has already been resolved.
-    </p>
+      </p>
 
       {/* Actions */}
       <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
@@ -421,7 +391,7 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
           className="px-4 py-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
         >
           Cancel
-      </button>
+        </button>
         <button
           type="submit"
           disabled={isLoading}
@@ -431,12 +401,12 @@ export function CampaignForm({ campaign, onSubmit, onCancel, isLoading }: Campai
             <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
+            </svg>
           )}
           {isEditMode ? 'Update Campaign' : 'Create Campaign'}
-      </button>
-    </div>
-  </form>
+        </button>
+      </div>
+    </form>
   );
 }
 

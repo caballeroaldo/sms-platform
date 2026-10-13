@@ -2,6 +2,8 @@
  * SMS Platform - API Client
  * Supports both real API and mock data for development
  */
+// Debug: log the current mode
+console.log('DEBUG: API mode - USE_MOCK =', typeof process !== 'undefined' && process.env.NEXT_PUBLIC_USE_MOCK, 'API_URL =', typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL);
 
 import type {
   Client,
@@ -40,6 +42,54 @@ import {
   filterCampaigns,
   filterTemplates,
 } from './mockData';
+
+// Simple JWT implementation for HS256 algorithm (browser-only)
+const jwt = {
+  // Base64URL encode
+  base64URLEncode(str: string): string {
+    return btoa(str)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  },
+
+  // Base64URL decode
+  base64URLDecode(str: string): string {
+    const padding = 4 - (str.length % 4);
+    if (padding === 4) return str;
+    const padded = str + '='.repeat(padding);
+    return atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+  },
+
+  // Sign JWT using HS256
+  async sign(payload: object, secret: string): Promise<string> {
+    const header = { alg: 'HS256', typ: 'JWT' };
+
+    const encodedHeader = this.base64URLEncode(JSON.stringify(header));
+    const encodedPayload = this.base64URLEncode(JSON.stringify(payload));
+
+    // Create signature using crypto.subtle (available in modern browsers)
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+
+    const signature = await crypto.subtle.sign(
+      'HMAC',
+      key,
+      new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`)
+    );
+
+    const encodedSignature = this.base64URLEncode(
+      String.fromCharCode(...new Uint8Array(signature))
+    );
+
+    return `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
+  },
+};
 
 // Configuration
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
@@ -126,10 +176,22 @@ const mockApi = {
   async login(input: LoginInput): Promise<ApiResponse<AuthResponse>> {
     await simulateDelay();
     if (input.email === 'admin@example.com' && input.password === 'admin123') {
+      // Use the same JWT secret as backend for development
+      const secret = 'dev-secret-key-change-in-production-only';
+      const payload = {
+        userId: 'user-1',
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        // Add expiration (7 days like backend)
+        exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
+      };
+
+      const token = await jwt.sign(payload, secret);
+
       return {
         success: true,
         data: {
-          token: 'mock-jwt-token-12345',
+          token,
           user: { id: 'user-1', email: 'admin@example.com', role: 'ADMIN' },
         },
       };
@@ -687,146 +749,155 @@ const mockApi = {
 // Export API object (switches between real/mock)
 // ===========================================
 
-export const api = USE_MOCK ? mockApi : {
-  async login(input: LoginInput) {
-    return apiFetch<AuthResponse>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
-  },
+export const api = USE_MOCK
+  ? {
+      ...mockApi,
+      // Override sendMessage to use real API for persistence in mock mode
+      async sendMessage(input: SendMessageInput) {
+        console.log('DEBUG: sendMessage override called, making real API call to /messages/send-now');
+        return apiFetch<SendMessageResult>('/messages/send-now', { method: 'POST', body: JSON.stringify(input) });
+      },
+    }
+  : {
+      async login(input: LoginInput) {
+        return apiFetch<AuthResponse>('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify(input),
+        });
+      },
 
-  async register(input: RegisterInput) {
-    return apiFetch<AuthResponse>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
-  },
+      async register(input: RegisterInput) {
+        return apiFetch<AuthResponse>('/auth/register', {
+          method: 'POST',
+          body: JSON.stringify(input),
+        });
+      },
 
-  async getClients(params?: { page?: number; limit?: number; search?: string; optedOut?: boolean }) {
-    const query = new URLSearchParams();
-    if (params?.page) query.set('page', String(params.page));
-    if (params?.limit) query.set('limit', String(params.limit));
-    if (params?.search) query.set('search', params.search);
-    if (params?.optedOut !== undefined) query.set('optedOut', String(params.optedOut));
-    return apiFetch<ClientListResponse>(`/clients?${query}`);
-  },
+      async getClients(params?: { page?: number; limit?: number; search?: string; optedOut?: boolean }) {
+        const query = new URLSearchParams();
+        if (params?.page) query.set('page', String(params.page));
+        if (params?.limit) query.set('limit', String(params.limit));
+        if (params?.search) query.set('search', params.search);
+        if (params?.optedOut !== undefined) query.set('optedOut', String(params.optedOut));
+        return apiFetch<ClientListResponse>(`/clients?${query}`);
+      },
 
-  async getClient(id: string) {
-    return apiFetch<Client>(`/clients/${id}`);
-  },
+      async getClient(id: string) {
+        return apiFetch<Client>(`/clients/${id}`);
+      },
 
-  async createClient(input: CreateClientInput) {
-    return apiFetch<Client>('/clients', { method: 'POST', body: JSON.stringify(input) });
-  },
+      async createClient(input: CreateClientInput) {
+        return apiFetch<Client>('/clients', { method: 'POST', body: JSON.stringify(input) });
+      },
 
-  async updateClient(id: string, data: Partial<Client>) {
-    return apiFetch<Client>(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-  },
+      async updateClient(id: string, data: Partial<Client>) {
+        return apiFetch<Client>(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+      },
 
-  async deleteClient(id: string) {
-    return apiFetch<Client>(`/clients/${id}`, { method: 'DELETE' });
-  },
+      async deleteClient(id: string) {
+        return apiFetch<Client>(`/clients/${id}`, { method: 'DELETE' });
+      },
 
-  // CSV import. Body is raw CSV text (Content-Type: text/csv), NOT JSON —
-  // so this can't use the JSON-defaulting apiFetch helper. Always returns JSON.
-  async importClients(csvText: string) {
-    return apiFetch<ImportClientsResult>('/clients/import', {
-      method: 'POST',
-      body: csvText,
-      headers: { 'Content-Type': 'text/csv' },
-    });
-  },
+      // CSV import. Body is raw CSV text (Content-Type: text/csv), NOT JSON —
+      // so this can't use the JSON-defaulting apiFetch helper. Always returns JSON.
+      async importClients(csvText: string) {
+        return apiFetch<ImportClientsResult>('/clients/import', {
+          method: 'POST',
+          body: csvText,
+          headers: { 'Content-Type': 'text/csv' },
+        });
+      },
 
-  async getTemplates(params?: { category?: string }) {
-    const query = new URLSearchParams();
-    if (params?.category) query.set('category', params.category);
-    return apiFetch<Template[]>(`/templates?${query}`);
-  },
+      async getTemplates(params?: { category?: string }) {
+        const query = new URLSearchParams();
+        if (params?.category) query.set('category', params.category);
+        return apiFetch<Template[]>(`/templates?${query}`);
+      },
 
-  async getTemplate(id: string) {
-    return apiFetch<Template>(`/templates/${id}`);
-  },
+      async getTemplate(id: string) {
+        return apiFetch<Template>(`/templates/${id}`);
+      },
 
-  async createTemplate(input: CreateTemplateInput) {
-    return apiFetch<Template>('/templates', { method: 'POST', body: JSON.stringify(input) });
-  },
+      async createTemplate(input: CreateTemplateInput) {
+        return apiFetch<Template>('/templates', { method: 'POST', body: JSON.stringify(input) });
+      },
 
-  async updateTemplate(id: string, data: Partial<CreateTemplateInput>) {
-    return apiFetch<Template>(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-  },
+      async updateTemplate(id: string, data: Partial<CreateTemplateInput>) {
+        return apiFetch<Template>(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+      },
 
-  async deleteTemplate(id: string) {
-    return apiFetch<Template | { usedIn?: { id: string; name: string }[] }>(`/templates/${id}`, { method: 'DELETE' });
-  },
+      async deleteTemplate(id: string) {
+        return apiFetch<Template | { usedIn?: { id: string; name: string }[] }>(`/templates/${id}`, { method: 'DELETE' });
+      },
 
-  async getCampaigns(params?: { page?: number; limit?: number; status?: string }) {
-    const query = new URLSearchParams();
-    if (params?.page) query.set('page', String(params.page));
-    if (params?.limit) query.set('limit', String(params.limit));
-    if (params?.status) query.set('status', params.status);
-    return apiFetch<CampaignListResponse>(`/campaigns?${query}`);
-  },
+      async getCampaigns(params?: { page?: number; limit?: number; status?: string }) {
+        const query = new URLSearchParams();
+        if (params?.page) query.set('page', String(params.page));
+        if (params?.limit) query.set('limit', String(params.limit));
+        if (params?.status) query.set('status', params.status);
+        return apiFetch<CampaignListResponse>(`/campaigns?${query}`);
+      },
 
-  async getCampaign(id: string) {
-    return apiFetch<Campaign>(`/campaigns/${id}`);
-  },
+      async getCampaign(id: string) {
+        return apiFetch<Campaign>(`/campaigns/${id}`);
+      },
 
-  async createCampaign(input: CreateCampaignInput) {
-    return apiFetch<Campaign>('/campaigns', { method: 'POST', body: JSON.stringify(input) });
-  },
+      async createCampaign(input: CreateCampaignInput) {
+        return apiFetch<Campaign>('/campaigns', { method: 'POST', body: JSON.stringify(input) });
+      },
 
-  async updateCampaign(id: string, data: Partial<CreateCampaignInput> & { status?: Campaign['status'] }) {
-    return apiFetch<Campaign>(`/campaigns/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-  },
+      async updateCampaign(id: string, data: Partial<CreateCampaignInput> & { status?: Campaign['status'] }) {
+        return apiFetch<Campaign>(`/campaigns/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+      },
 
-  async deleteCampaign(id: string) {
-    return apiFetch<Campaign>(`/campaigns/${id}`, { method: 'DELETE' });
-  },
+      async deleteCampaign(id: string) {
+        return apiFetch<Campaign>(`/campaigns/${id}`, { method: 'DELETE' });
+      },
 
-  async sendCampaign(id: string) {
-    return apiFetch<SendCampaignResult>(`/campaigns/${id}/send`, { method: 'POST' });
-  },
+      async sendCampaign(id: string) {
+        return apiFetch<SendCampaignResult>(`/campaigns/${id}/send`, { method: 'POST' });
+      },
 
-  async getClientCount(params?: { audience?: CountAudienceMode }) {
-    const query = new URLSearchParams();
-    if (params?.audience) query.set('audience', params.audience);
-    const qs = query.toString();
-    return apiFetch<ClientCountResult>(`/clients/count${qs ? `?${qs}` : ''}`);
-  },
+      async getClientCount(params?: { audience?: CountAudienceMode }) {
+        const query = new URLSearchParams();
+        if (params?.audience) query.set('audience', params.audience);
+        const qs = query.toString();
+        return apiFetch<ClientCountResult>(`/clients/count${qs ? `?${qs}` : ''}`);
+      },
 
-  async getMessages(params?: { page?: number; limit?: number; status?: string; campaignId?: string; clientId?: string; search?: string; direction?: string }) {
-    const query = new URLSearchParams();
-    if (params?.page) query.set('page', String(params.page));
-    if (params?.limit) query.set('limit', String(params.limit));
-    if (params?.status) query.set('status', params.status);
-    if (params?.campaignId) query.set('campaignId', params.campaignId);
-    if (params?.clientId) query.set('clientId', params.clientId);
-    if (params?.search) query.set('search', params.search);
-    if (params?.direction) query.set('direction', params.direction);
-    return apiFetch<{ messages: Message[]; pagination: { page: number; limit: number; total: number; pages: number } }>(`/messages?${query}`);
-  },
+      async getMessages(params?: { page?: number; limit?: number; status?: string; campaignId?: string; clientId?: string; search?: string; direction?: string }) {
+        const query = new URLSearchParams();
+        if (params?.page) query.set('page', String(params.page));
+        if (params?.limit) query.set('limit', String(params.limit));
+        if (params?.status) query.set('status', params.status);
+        if (params?.campaignId) query.set('campaignId', params.campaignId);
+        if (params?.clientId) query.set('clientId', params.clientId);
+        if (params?.search) query.set('search', params.search);
+        if (params?.direction) query.set('direction', params.direction);
+        return apiFetch<{ messages: Message[]; pagination: { page: number; limit: number; total: number; pages: number } }>(`/messages?${query}`);
+      },
 
-  async sendMessage(input: SendMessageInput) {
-    return apiFetch<SendMessageResult>('/messages/send-now', { method: 'POST', body: JSON.stringify(input) });
-  },
+      async sendMessage(input: SendMessageInput) {
+        return apiFetch<SendMessageResult>('/messages/send-now', { method: 'POST', body: JSON.stringify(input) });
+      },
 
-  async getDashboardStats() {
-    return apiFetch<DashboardStats>('/dashboard/stats');
-  },
+      async getDashboardStats() {
+        return apiFetch<DashboardStats>('/dashboard/stats');
+      },
 
-  // Inbox left-column aggregate (GET /messages/conversations) — read-only.
-  async getConversations(params?: { page?: number; limit?: number; search?: string }) {
-    const query = new URLSearchParams();
-    if (params?.page) query.set('page', String(params.page));
-    if (params?.limit) query.set('limit', String(params.limit));
-    if (params?.search) query.set('search', params.search);
-    return apiFetch<ConversationsResponse>(`/messages/conversations?${query}`);
-  },
+      // Inbox left-column aggregate (GET /messages/conversations) — read-only.
+      async getConversations(params?: { page?: number; limit?: number; search?: string }) {
+        const query = new URLSearchParams();
+        if (params?.page) query.set('page', String(params.page));
+        if (params?.limit) query.set('limit', String(params.limit));
+        if (params?.search) query.set('search', params.search);
+        return apiFetch<ConversationsResponse>(`/messages/conversations?${query}`);
+      },
 
-  // Merged outbound+inbound thread for one client (GET /messages/client/:clientId).
-  async getClientMessages(clientId: string) {
-    return apiFetch<ConversationMessage[]>(`/messages/client/${encodeURIComponent(clientId)}`);
-  },
-};
+      // Merged outbound+inbound thread for one client (GET /messages/client/:clientId).
+      async getClientMessages(clientId: string) {
+        return apiFetch<ConversationMessage[]>(`/messages/client/${encodeURIComponent(clientId)}`);
+      },
+    };
 
 export default api;

@@ -34,7 +34,9 @@ export default function RootLayout({
         <QueryProvider>
           <AuthProvider>
             <Navigation />
-            <main className="min-h-screen">{children}</main>
+            <main className="min-h-screen flex flex-col">
+              <div className="pt-16 flex-1">{children}</div>
+            </main>
           </AuthProvider>
         </QueryProvider>
       </body>

@@ -42,15 +42,25 @@ export async function sendSMS(to: string, body: string): Promise<SendSMSResult> 
   }
 
   try {
-    const message = await client.messages.create({
+    const params: any = {
       to,
       from: config.twilioPhoneNumber,
       body,
-      // Use Messaging Service if configured
-      ...(config.twilioMessagingServiceSid && {
-        messagingServiceSid: config.twilioMessagingServiceSid,
-      }),
-    });
+    };
+
+    // Only add Messaging Service SID if it's a non‑empty string
+    if (config.twilioMessagingServiceSid?.trim()) {
+      params.messagingServiceSid = config.twilioMessagingServiceSid.trim();
+    }
+    // Only add Content Sid if it's a non‑empty string (used with Messaging Service templates)
+    if (config.twilioContentSid?.trim()) {
+      params.contentSid = config.twilioContentSid.trim();
+    }
+
+    // Debug: log the params being sent to Twilio
+    console.log('Twilio sendSMS params:', JSON.stringify(params));
+
+    const message = await client.messages.create(params);
 
     return {
       success: true,

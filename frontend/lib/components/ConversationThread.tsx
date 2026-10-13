@@ -273,7 +273,7 @@ export function ConversationThread({ clientId }: ConversationThreadProps) {
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
               rows={1}
-              className="w-full px-4 py-3 border border-slate-300 rounded-2xl resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
+              className="w-full px-4 py-3 border border-slate-300 rounded-2xl resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-slate-700 placeholder:text-slate-400"
               style={{ minHeight: '48px', maxHeight: '120px' }}
             />
           </div>

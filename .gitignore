@@ -39,3 +39,6 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+# Local Claude Code config and skills (not shared upstream)
+.claude/

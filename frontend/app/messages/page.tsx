@@ -130,9 +130,9 @@ function InboxInner() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-64px)] bg-slate-100">
+    <div className="flex flex-1 min-h-0 bg-slate-100">
       {/* Left pane — conversation list */}
-      <aside className="w-[340px] flex-shrink-0 bg-white border-r border-slate-200 flex flex-col">
+      <aside className="w-[340px] flex-shrink-0 bg-white border-r border-slate-200 flex flex-col min-h-0">
         {/* Header */}
         <div className="p-4 border-b border-slate-200">
           <div className="flex items-center justify-between mb-3">
@@ -214,7 +214,7 @@ function InboxInner() {
       </aside>
 
       {/* Right pane — active thread */}
-      <section className="flex-1 min-w-0 flex flex-col">
+      <section className="flex-1 min-w-0 min-h-0 flex flex-col">
         {selectedId ? (
           <ConversationThread clientId={selectedId} />
         ) : (

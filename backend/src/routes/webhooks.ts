@@ -55,7 +55,17 @@ router.post('/inbound', async (req: Request, res: Response): Promise<void> => {
       MessageStatus: status,
     } = req.body;
 
-    console.log('Inbound SMS:', { fromNumber, toNumber, twilioSid });
+    // Trim whitespace from phone numbers
+    const trimmedFrom = fromNumber?.trim() ?? '';
+    const trimmedTo = toNumber?.trim() ?? '';
+
+    console.log('Inbound SMS:', {
+  fromNumber: trimmedFrom,
+  toNumber: trimmedTo,
+  twilioSid,
+  rawFrom: fromNumber,
+  rawTo: toNumber
+});
 
     // Validate webhook signature
     const signature = req.headers['x-twilio-signature'] as string;
@@ -90,9 +100,11 @@ router.post('/inbound', async (req: Request, res: Response): Promise<void> => {
       },
     });
 
-    // Find client by phone number
+    // Find client by phone number (using trimmed version)
+// Add '+' prefix if not present, as database stores numbers with '+'
+    const lookupFrom = trimmedFrom.startsWith('+') ? trimmedFrom : `+${trimmedFrom}`;
     const client = await prisma.client.findUnique({
-      where: { phone: fromNumber },
+      where: { phone: lookupFrom },
       select: { id: true, optedOut: true },
     });
 
@@ -118,7 +130,7 @@ router.post('/inbound', async (req: Request, res: Response): Promise<void> => {
 
       await prisma.webhookEvent.update({
         where: { id: webhookEvent.id },
-        data: { processed: true, processedAt: new Date() },
+        data: { processed: true },
       });
 
       res.sendStatus(200);
@@ -129,7 +141,7 @@ router.post('/inbound', async (req: Request, res: Response): Promise<void> => {
     if (upperBody === 'HELP' || upperBody === 'INFO') {
       await prisma.webhookEvent.update({
         where: { id: webhookEvent.id },
-        data: { processed: true, processedAt: new Date() },
+        data: { processed: true },
       });
       res.set('Content-Type', 'text/xml');
       res.send(`
